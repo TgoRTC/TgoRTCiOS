@@ -6,27 +6,21 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct TgoRTCIOSApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
+    
+    init() {
+        // 初始化 TgoRTC SDK
+        let options = Options()
+        options.isDebug = true
+        options.mirror = true
+        TgoRTC.shared.configure(options: options)
+    }
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            HomeView()
         }
-        .modelContainer(sharedModelContainer)
     }
 }

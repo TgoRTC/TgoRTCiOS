@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		3F05DE022F1A42EA00FDBC94 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3F96F7D12F1A200000951123 /* LiveKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		3F96F78A2F1A115100951123 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,9 +33,22 @@
 		3F96F7932F1A115100951123 /* TgoRTCIOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TgoRTCIOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3F05DE692F1CCE9F00FDBC94 /* Exceptions for "TgoRTCIOS" folder in "TgoRTCIOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3F96F7792F1A115000951123 /* TgoRTCIOS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3F96F77C2F1A115000951123 /* TgoRTCIOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3F05DE692F1CCE9F00FDBC94 /* Exceptions for "TgoRTCIOS" folder in "TgoRTCIOS" target */,
+			);
 			path = TgoRTCIOS;
 			sourceTree = "<group>";
 		};
@@ -45,6 +62,11 @@
 			path = TgoRTCIOSUITests;
 			sourceTree = "<group>";
 		};
+		3F96F7CA2F1A152F00951123 /* TgoRTCSDK */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TgoRTCSDK;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +74,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3F05DE022F1A42EA00FDBC94 /* LiveKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,6 +98,7 @@
 		3F96F7712F1A115000951123 = {
 			isa = PBXGroup;
 			children = (
+				3F96F7CA2F1A152F00951123 /* TgoRTCSDK */,
 				3F96F77C2F1A115000951123 /* TgoRTCIOS */,
 				3F96F78C2F1A115100951123 /* TgoRTCIOSTests */,
 				3F96F7962F1A115100951123 /* TgoRTCIOSUITests */,
@@ -109,9 +133,11 @@
 			);
 			fileSystemSynchronizedGroups = (
 				3F96F77C2F1A115000951123 /* TgoRTCIOS */,
+				3F96F7CA2F1A152F00951123 /* TgoRTCSDK */,
 			);
 			name = TgoRTCIOS;
 			packageProductDependencies = (
+				3F96F7D12F1A200000951123 /* LiveKit */,
 			);
 			productName = TgoRTCIOS;
 			productReference = 3F96F77A2F1A115000951123 /* TgoRTCIOS.app */;
@@ -195,6 +221,9 @@
 			);
 			mainGroup = 3F96F7712F1A115000951123;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3F96F7D02F1A200000951123 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3F96F77B2F1A115000951123 /* Products */;
 			projectDirPath = "";
@@ -398,6 +427,9 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TgoRTCIOS/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "TgoRTC 需要访问您的摄像头以进行视频通话";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TgoRTC 需要访问您的麦克风以进行音频通话";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -442,6 +474,9 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TgoRTCIOS/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "TgoRTC 需要访问您的摄像头以进行视频通话";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TgoRTC 需要访问您的麦克风以进行音频通话";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -615,6 +650,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		3F96F7D02F1A200000951123 /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/livekit/client-sdk-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3F96F7D12F1A200000951123 /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3F96F7D02F1A200000951123 /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3F96F7722F1A115000951123 /* Project object */;
 }
