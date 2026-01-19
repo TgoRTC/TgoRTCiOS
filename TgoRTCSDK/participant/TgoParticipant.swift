@@ -182,6 +182,12 @@ public final class TgoParticipant: NSObject, ObservableObject {
     public func addTimeoutListener(_ listener: @escaping () -> Void) -> ListenerToken {
         let id = UUID()
         timeoutListeners[id] = listener
+        // If already timeout, immediately notify
+        if isTimeout {
+            DispatchQueue.main.async {
+                listener()
+            }
+        }
         return ListenerToken { [weak self] in self?.timeoutListeners.removeValue(forKey: id) }
     }
     
@@ -190,6 +196,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
         microphoneListeners[id] = listener
         // Immediately notify current state
         let currentState = isMicrophoneEnabled()
+        TgoLogger.shared.debug("添加麦克风监听器 - uid: \(uid), 当前状态: \(currentState)")
         DispatchQueue.main.async {
             listener(currentState)
         }
@@ -201,6 +208,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
         cameraListeners[id] = listener
         // Immediately notify current state
         let currentState = isCameraEnabled()
+        TgoLogger.shared.debug("添加摄像头监听器 - uid: \(uid), 当前状态: \(currentState)")
         DispatchQueue.main.async {
             listener(currentState)
         }
@@ -210,6 +218,11 @@ public final class TgoParticipant: NSObject, ObservableObject {
     public func addSpeakingListener(_ listener: @escaping (Bool) -> Void) -> ListenerToken {
         let id = UUID()
         speakingListeners[id] = listener
+        // Immediately notify current state
+        let currentState = localParticipant?.isSpeaking ?? remoteParticipant?.isSpeaking ?? false
+        DispatchQueue.main.async {
+            listener(currentState)
+        }
         return ListenerToken { [weak self] in self?.speakingListeners.removeValue(forKey: id) }
     }
     
@@ -222,12 +235,34 @@ public final class TgoParticipant: NSObject, ObservableObject {
     public func addConnQualityListener(_ listener: @escaping (TgoConnectionQuality) -> Void) -> ListenerToken {
         let id = UUID()
         connectionQualityListeners[id] = listener
+        // Immediately notify current state
+        let lkQuality = localParticipant?.connectionQuality ?? remoteParticipant?.connectionQuality ?? .unknown
+        let currentQuality: TgoConnectionQuality = {
+            switch lkQuality {
+            case .excellent: return .excellent
+            case .good: return .good
+            case .poor: return .poor
+            case .lost: return .lost
+            default: return .unknown
+            }
+        }()
+        DispatchQueue.main.async {
+            listener(currentQuality)
+        }
         return ListenerToken { [weak self] in self?.connectionQualityListeners.removeValue(forKey: id) }
     }
     
     public func addJoinedListener(_ listener: @escaping () -> Void) -> ListenerToken {
         let id = UUID()
         joinedListeners[id] = listener
+        // If already joined, immediately notify
+        let alreadyJoined = isJoined()
+        TgoLogger.shared.debug("添加加入监听器 - uid: \(uid), 已加入: \(alreadyJoined)")
+        if alreadyJoined {
+            DispatchQueue.main.async {
+                listener()
+            }
+        }
         return ListenerToken { [weak self] in self?.joinedListeners.removeValue(forKey: id) }
     }
     
@@ -240,6 +275,14 @@ public final class TgoParticipant: NSObject, ObservableObject {
     public func addTrackPublishedListener(_ listener: @escaping () -> Void) -> ListenerToken {
         let id = UUID()
         trackPublishedListeners[id] = listener
+        // If already has published tracks, immediately notify
+        let hasPublishedTracks = (localParticipant?.trackPublications.count ?? 0) > 0 ||
+                                  (remoteParticipant?.trackPublications.count ?? 0) > 0
+        if hasPublishedTracks {
+            DispatchQueue.main.async {
+                listener()
+            }
+        }
         return ListenerToken { [weak self] in self?.trackPublishedListeners.removeValue(forKey: id) }
     }
     
