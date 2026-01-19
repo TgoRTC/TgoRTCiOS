@@ -303,9 +303,11 @@ public final class TgoParticipant: NSObject, ObservableObject {
 
     private func initListener() {
         if let local = localParticipant {
+            TgoLogger.shared.debug("添加本地用户 delegate - uid: \(uid)")
             local.add(delegate: self)
         }
         if let remote = remoteParticipant {
+            TgoLogger.shared.debug("添加远程用户 delegate - uid: \(uid)")
             remote.add(delegate: self)
         }
     }
@@ -509,5 +511,32 @@ extension TgoParticipant: ParticipantDelegate {
                 for listener in self.microphoneListeners.values { listener(false) }
             }
         }
+    }
+    
+    // 远程用户轨道启用/禁用状态变化 (mute/unmute)
+    public func participant(_ participant: RemoteParticipant, didUpdatePublication publication: RemoteTrackPublication) {
+        guard !isDisposed else { return }
+        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        let isEnabled = !publication.isMuted
+        TgoLogger.shared.info("远程轨道状态变化 - uid: \(uid), source: \(sourceName), enabled: \(isEnabled), muted: \(publication.isMuted)")
+        
+        if publication.source == .microphone {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !self.isDisposed else { return }
+                for listener in self.microphoneListeners.values { listener(isEnabled) }
+            }
+        } else if publication.source == .camera {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !self.isDisposed else { return }
+                for listener in self.cameraListeners.values { listener(isEnabled) }
+            }
+        }
+    }
+    
+    // 远程用户 Track 更新
+    public func participant(_ participant: RemoteParticipant, didUpdateTrack publication: RemoteTrackPublication) {
+        guard !isDisposed else { return }
+        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        TgoLogger.shared.debug("远程轨道更新 - uid: \(uid), source: \(sourceName), subscribed: \(publication.isSubscribed), muted: \(publication.isMuted)")
     }
 }
