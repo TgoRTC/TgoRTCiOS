@@ -110,12 +110,20 @@ public final class ParticipantManager {
     }
     
     public func inviteParticipant(uids: [String]) {
-        guard let roomInfo = TgoRTC.shared.roomManager.currentRoomInfo else { return }
+        guard let roomInfo = TgoRTC.shared.roomManager.currentRoomInfo else {
+            TgoLogger.shared.warning("邀请参与者失败: 当前不在房间中")
+            return
+        }
+        
+        TgoLogger.shared.info("邀请参与者 - uids: \(uids)")
         
         let existingUids = Set(remoteParticipants.keys)
         var newUids = uids.filter { !existingUids.contains($0) }
         
-        if newUids.isEmpty { return }
+        if newUids.isEmpty {
+            TgoLogger.shared.debug("邀请的参与者已存在，无需重复添加")
+            return
+        }
         
         let currentCount = roomInfo.uidList.count
         let availableSlots = roomInfo.maxParticipants - currentCount
@@ -126,11 +134,12 @@ public final class ParticipantManager {
         }
         
         if newUids.count > availableSlots {
-            TgoLogger.shared.error("邀请人数超出限制，最多还能添加 \(availableSlots) 人，实际邀请 \(newUids.count) 人")
+            TgoLogger.shared.warning("邀请人数超出限制，最多还能添加 \(availableSlots) 人，实际邀请 \(newUids.count) 人")
             newUids = Array(newUids.prefix(availableSlots))
         }
         
         for uid in newUids {
+            TgoLogger.shared.debug("添加待加入参与者 - uid: \(uid)")
             let tgoParticipant = TgoParticipant(uid: uid, localParticipant: nil, remoteParticipant: nil)
             remoteParticipants[uid] = tgoParticipant
             notifyNewParticipant(tgoParticipant)
@@ -139,9 +148,15 @@ public final class ParticipantManager {
     }
     
     public func setParticipantJoin(participant: RemoteParticipant) {
-        guard let identity = participant.identity?.stringValue else { return }
+        guard let identity = participant.identity?.stringValue else {
+            TgoLogger.shared.warning("参与者加入失败: identity 为空")
+            return
+        }
+        
+        TgoLogger.shared.info("处理参与者加入 - uid: \(identity)")
         
         if let existing = remoteParticipants[identity] {
+            TgoLogger.shared.debug("更新已存在的参与者 - uid: \(identity)")
             existing.setRemoteParticipant(participant: participant)
             return
         }
@@ -150,13 +165,19 @@ public final class ParticipantManager {
             roomInfo.uidList.append(identity)
         }
         
+        TgoLogger.shared.info("创建新的远程参与者 - uid: \(identity)")
         let tgoParticipant = TgoParticipant(uid: identity, localParticipant: nil, remoteParticipant: participant)
         remoteParticipants[identity] = tgoParticipant
         notifyNewParticipant(tgoParticipant)
     }
     
     public func setParticipantLeave(participant: RemoteParticipant) {
-        guard let identity = participant.identity?.stringValue else { return }
+        guard let identity = participant.identity?.stringValue else {
+            TgoLogger.shared.warning("参与者离开处理失败: identity 为空")
+            return
+        }
+        
+        TgoLogger.shared.info("处理参与者离开 - uid: \(identity)")
         
         if let tgoParticipant = remoteParticipants[identity] {
             tgoParticipant.notifyLeave()
@@ -166,12 +187,14 @@ public final class ParticipantManager {
     }
     
     public func clear() {
+        TgoLogger.shared.debug("清理所有参与者 - 本地: \(localParticipant != nil ? 1 : 0), 远程: \(remoteParticipants.count)")
         localParticipant?.dispose()
         localParticipant = nil
         for p in remoteParticipants.values {
             p.dispose()
         }
         remoteParticipants.removeAll()
+        TgoLogger.shared.info("参与者清理完成")
     }
     
     private func notifyNewParticipant(_ participant: TgoParticipant) {

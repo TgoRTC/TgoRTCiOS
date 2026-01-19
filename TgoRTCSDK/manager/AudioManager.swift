@@ -28,6 +28,7 @@ public final class AudioManager {
     }
     
     public func setSpeakerphoneOn(_ on: Bool, forceSpeakerOutput: Bool = false) async {
+        TgoLogger.shared.info("设置扬声器状态 - enabled: \(on)")
         #if os(iOS)
         do {
             let session = AVAudioSession.sharedInstance()
@@ -37,6 +38,7 @@ public final class AudioManager {
                 try session.overrideOutputAudioPort(.none)
             }
             self.isSpeakerOn = on
+            TgoLogger.shared.debug("扬声器状态设置成功 - enabled: \(on)")
         } catch {
             TgoLogger.shared.error("设置扬声器失败: \(error.localizedDescription)")
         }
@@ -44,6 +46,7 @@ public final class AudioManager {
     }
     
     public func toggleSpeakerphone() async {
+        TgoLogger.shared.debug("切换扬声器状态 - 当前: \(isSpeakerOn)")
         await setSpeakerphoneOn(!isSpeakerOn)
     }
     

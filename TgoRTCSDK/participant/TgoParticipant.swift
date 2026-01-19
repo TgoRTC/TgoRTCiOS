@@ -32,6 +32,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
         self.localParticipant = localParticipant
         self.remoteParticipant = remoteParticipant
         super.init()
+        TgoLogger.shared.info("TgoParticipant 初始化 - uid: \(uid), isLocal: \(localParticipant != nil)")
         self.initListener()
     }
     
@@ -49,12 +50,14 @@ public final class TgoParticipant: NSObject, ObservableObject {
     private var trackUnpublishedListeners: [UUID: () -> Void] = [:]
     
     public func setLocalParticipant(participant: LocalParticipant) {
+        TgoLogger.shared.info("本地用户加入房间 - uid: \(uid)")
         self.localParticipant = participant
         self.initListener()
         self.notifyInitialState()
     }
     
     public func setRemoteParticipant(participant: RemoteParticipant) {
+        TgoLogger.shared.info("远程用户加入房间 - uid: \(uid)")
         self.remoteParticipant = participant
         self.initListener()
         self.notifyInitialState()
@@ -64,6 +67,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
     public func setTimeout(_ value: Bool) {
         self.isTimeout = value
         if value {
+            TgoLogger.shared.warning("用户超时 - uid: \(uid)")
             self.notifyTimeout()
         }
     }
@@ -100,9 +104,14 @@ public final class TgoParticipant: NSObject, ObservableObject {
     
     // only local
     public func setMicrophoneEnabled(enable: Bool) async {
-        guard let local = localParticipant else { return }
+        guard let local = localParticipant else {
+            TgoLogger.shared.warning("设置麦克风失败: localParticipant 为空")
+            return
+        }
+        TgoLogger.shared.info("设置麦克风状态 - uid: \(uid), enabled: \(enable)")
         do {
             try await local.setMicrophone(enabled: enable)
+            TgoLogger.shared.debug("麦克风状态设置成功 - enabled: \(enable)")
         } catch {
             TgoLogger.shared.error("设置麦克风失败: \(error.localizedDescription)")
         }
@@ -110,9 +119,14 @@ public final class TgoParticipant: NSObject, ObservableObject {
     
     // only local
     public func setCameraEnabled(enabled: Bool) async {
-        guard let local = localParticipant else { return }
+        guard let local = localParticipant else {
+            TgoLogger.shared.warning("设置摄像头失败: localParticipant 为空")
+            return
+        }
+        TgoLogger.shared.info("设置摄像头状态 - uid: \(uid), enabled: \(enabled)")
         do {
             try await local.setCamera(enabled: enabled)
+            TgoLogger.shared.debug("摄像头状态设置成功 - enabled: \(enabled)")
         } catch {
             TgoLogger.shared.error("设置摄像头失败: \(error.localizedDescription)")
         }
@@ -120,9 +134,14 @@ public final class TgoParticipant: NSObject, ObservableObject {
     
     // only local
     public func setScreenShareEnabled(enabled: Bool) async {
-        guard let local = localParticipant else { return }
+        guard let local = localParticipant else {
+            TgoLogger.shared.warning("设置屏幕共享失败: localParticipant 为空")
+            return
+        }
+        TgoLogger.shared.info("设置屏幕共享状态 - uid: \(uid), enabled: \(enabled)")
         do {
             try await local.setScreenShare(enabled: enabled)
+            TgoLogger.shared.debug("屏幕共享状态设置成功 - enabled: \(enabled)")
         } catch {
             TgoLogger.shared.error("设置共享屏幕失败: \(error.localizedDescription)")
         }
@@ -131,7 +150,12 @@ public final class TgoParticipant: NSObject, ObservableObject {
     private var currentCameraPosition: AVCaptureDevice.Position = .front
     
     public func switchCamera() {
-        guard let local = localParticipant else { return }
+        guard let local = localParticipant else {
+            TgoLogger.shared.warning("切换摄像头失败: localParticipant 为空")
+            return
+        }
+        let oldPos = currentCameraPosition
+        TgoLogger.shared.info("开始切换摄像头 - uid: \(uid), 当前: \(oldPos == .front ? "前置" : "后置")")
         Task {
             do {
                 // 切换摄像头位置
@@ -140,6 +164,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
                 try await local.setCamera(enabled: true, captureOptions: CameraCaptureOptions(position: newPos))
                 
                 currentCameraPosition = newPos
+                TgoLogger.shared.info("切换摄像头成功 - uid: \(uid), 新位置: \(newPos == .front ? "前置" : "后置")")
                 
                 DispatchQueue.main.async {
                     for listener in self.cameraPositionListeners.values {
@@ -252,6 +277,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
     
     public func notifyJoined() {
         guard !isDisposed else { return }
+        TgoLogger.shared.info("通知用户加入事件 - uid: \(uid), isLocal: \(isLocal())")
         DispatchQueue.main.async { [weak self] in
             guard let self = self, !self.isDisposed else { return }
             for listener in self.joinedListeners.values { listener() }
@@ -259,6 +285,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
     }
     
     public func notifyLeave() {
+        TgoLogger.shared.info("用户离开房间 - uid: \(uid), isLocal: \(isLocal())")
         let listeners = leaveListeners.values
         DispatchQueue.main.async {
             for listener in listeners { listener() }
@@ -294,6 +321,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
         lock.lock()
         defer { lock.unlock() }
         
+        TgoLogger.shared.debug("释放 TgoParticipant 资源 - uid: \(uid)")
         isDisposed = true
         
         // Remove delegates to prevent callbacks after disposal
@@ -331,6 +359,7 @@ extension TgoParticipant: ParticipantDelegate {
             default: return .unknown
             }
         }()
+        TgoLogger.shared.debug("连接质量更新 - uid: \(uid), quality: \(tgoQuality)")
         DispatchQueue.main.async { [weak self] in
             guard let self = self, !self.isDisposed else { return }
             for listener in self.connectionQualityListeners.values { listener(tgoQuality) }
@@ -339,6 +368,7 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: Participant, didUpdateIsSpeaking isSpeaking: Bool) {
         guard !isDisposed else { return }
+        TgoLogger.shared.debug("说话状态更新 - uid: \(uid), isSpeaking: \(isSpeaking)")
         DispatchQueue.main.async { [weak self] in
             guard let self = self, !self.isDisposed else { return }
             for listener in self.speakingListeners.values { listener(isSpeaking) }
@@ -347,6 +377,8 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: Participant, didUpdatePublication publication: TrackPublication, muted: Bool) {
         guard !isDisposed else { return }
+        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        TgoLogger.shared.info("轨道状态更新 - uid: \(uid), source: \(sourceName), muted: \(muted)")
         if publication.source == .microphone {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
@@ -362,6 +394,8 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: Participant, didPublishPublication publication: TrackPublication) {
         guard !isDisposed else { return }
+        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "屏幕共享")
+        TgoLogger.shared.info("轨道发布 - uid: \(uid), source: \(sourceName)")
         if publication.source == .camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
@@ -381,6 +415,8 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: Participant, didUnpublishPublication publication: TrackPublication) {
         guard !isDisposed else { return }
+        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "屏幕共享")
+        TgoLogger.shared.info("轨道取消发布 - uid: \(uid), source: \(sourceName)")
         if publication.source == .camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
@@ -400,6 +436,8 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: RemoteParticipant, didSubscribePublication publication: RemoteTrackPublication, track: Track) {
         guard !isDisposed else { return }
+        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        TgoLogger.shared.info("订阅远程轨道 - uid: \(uid), source: \(sourceName)")
         if publication.source == .camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
@@ -415,6 +453,8 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: RemoteParticipant, didUnsubscribePublication publication: RemoteTrackPublication, track: Track) {
         guard !isDisposed else { return }
+        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        TgoLogger.shared.info("取消订阅远程轨道 - uid: \(uid), source: \(sourceName)")
         if publication.source == .camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }

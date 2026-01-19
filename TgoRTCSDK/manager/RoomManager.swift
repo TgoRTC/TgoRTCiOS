@@ -71,9 +71,12 @@ public final class RoomManager: NSObject {
               cameraEnabled: Bool = false,
               screenShareEnabled: Bool = false) async {
         if currentRoomInfo != nil {
-            TgoLogger.shared.warning("already in room")
+            TgoLogger.shared.warning("已在房间中，无法重复加入")
             return
         }
+        
+        TgoLogger.shared.info("开始加入房间 - roomName: \(roomInfo.roomName), loginUID: \(roomInfo.loginUID)")
+        TgoLogger.shared.debug("加入配置 - mic: \(micEnabled), camera: \(cameraEnabled), screenShare: \(screenShareEnabled)")
         
         self.currentRoomInfo = roomInfo
         notifyConnectionStatusChanged(roomName: roomInfo.roomName, status: .connecting)
@@ -99,25 +102,30 @@ public final class RoomManager: NSObject {
         self.room = room
         
         do {
+            TgoLogger.shared.debug("正在连接到服务器...")
             try await room.connect(url: roomInfo.url, token: roomInfo.token, connectOptions: ConnectOptions(
                 autoSubscribe: true
             ))
+            TgoLogger.shared.info("成功连接到房间 - roomName: \(roomInfo.roomName)")
             
             // Initial track setup
             if micEnabled {
+                TgoLogger.shared.debug("初始化麦克风...")
                 try await room.localParticipant.setMicrophone(enabled: true)
             }
             if cameraEnabled {
+                TgoLogger.shared.debug("初始化摄像头...")
                 try await room.localParticipant.setCamera(enabled: true)
             }
             if screenShareEnabled {
+                TgoLogger.shared.debug("初始化屏幕共享...")
                 try await room.localParticipant.setScreenShare(enabled: true)
             }
             
             startTimeoutChecker(timeoutSeconds: roomInfo.timeout)
             
         } catch {
-            TgoLogger.shared.error("连接到房间错误: \(error.localizedDescription)")
+            TgoLogger.shared.error("连接到房间失败: \(error.localizedDescription)")
             notifyConnectionStatusChanged(roomName: roomInfo.roomName, status: .disconnected)
             self.currentRoomInfo = nil
             self.room = nil
@@ -125,11 +133,13 @@ public final class RoomManager: NSObject {
     }
     
     public func leaveRoom() async {
+        TgoLogger.shared.info("正在离开房间 - roomName: \(currentRoomInfo?.roomName ?? "unknown")")
         stopTimeoutChecker()
         await room?.disconnect()
         room = nil
         currentRoomInfo = nil
         ParticipantManager.shared.clear()
+        TgoLogger.shared.info("已离开房间")
     }
     
     private func startTimeoutChecker(timeoutSeconds: Int) {
@@ -171,25 +181,34 @@ extension RoomManager: RoomDelegate {
     public func room(_ room: Room, didUpdateConnectionState state: ConnectionState, from oldState: ConnectionState) {
         guard let roomName = currentRoomInfo?.roomName else { return }
         
+        TgoLogger.shared.info("房间连接状态变化 - roomName: \(roomName), \(oldState) -> \(state)")
+        
         if case .connecting = state {
             notifyConnectionStatusChanged(roomName: roomName, status: .connecting)
         } else if case .connected = state {
+            TgoLogger.shared.info("本地用户已连接到房间 - roomName: \(roomName)")
             notifyConnectionStatusChanged(roomName: roomName, status: .connected)
             ParticipantManager.shared.getLocalParticipant()?.setLocalParticipant(participant: room.localParticipant)
             ParticipantManager.shared.getLocalParticipant()?.notifyJoined()
         } else if case .disconnected = state {
+            TgoLogger.shared.info("本地用户已断开连接 - roomName: \(roomName)")
             notifyConnectionStatusChanged(roomName: roomName, status: .disconnected)
             ParticipantManager.shared.getLocalParticipant()?.notifyLeave()
         } else if case .reconnecting = state {
+            TgoLogger.shared.warning("正在重新连接 - roomName: \(roomName)")
             notifyConnectionStatusChanged(roomName: roomName, status: .connecting)
         }
     }
     
     public func room(_ room: Room, participantDidConnect participant: RemoteParticipant) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        TgoLogger.shared.info("远程用户连接 - uid: \(identity)")
         ParticipantManager.shared.setParticipantJoin(participant: participant)
     }
     
     public func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        TgoLogger.shared.info("远程用户断开连接 - uid: \(identity)")
         ParticipantManager.shared.setParticipantLeave(participant: participant)
     }
     
