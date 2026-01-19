@@ -60,8 +60,30 @@ public final class TgoParticipant: NSObject, ObservableObject {
         TgoLogger.shared.info("远程用户加入房间 - uid: \(uid)")
         self.remoteParticipant = participant
         self.initListener()
+        
+        // 打印远程用户当前的轨道状态，用于诊断
+        let publications = participant.trackPublications
+        TgoLogger.shared.debug("远程用户轨道数量: \(publications.count)")
+        for pub in publications {
+            let sourceName = pub.source == .microphone ? "麦克风" : (pub.source == .camera ? "摄像头" : "其他")
+            TgoLogger.shared.debug("  - 轨道: \(sourceName), subscribed: \(pub.isSubscribed), muted: \(pub.isMuted)")
+        }
+        
+        // 检查远程用户的摄像头和麦克风状态
+        let micEnabled = participant.isMicrophoneEnabled()
+        let camEnabled = participant.isCameraEnabled()
+        TgoLogger.shared.info("远程用户初始状态 - uid: \(uid), mic: \(micEnabled), camera: \(camEnabled)")
+        
         self.notifyInitialState()
         self.notifyJoined()
+        
+        // 如果远程用户已经有发布的轨道，主动通知 trackPublished
+        if !publications.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !self.isDisposed else { return }
+                for listener in self.trackPublishedListeners.values { listener() }
+            }
+        }
     }
     
     public func setTimeout(_ value: Bool) {
@@ -91,11 +113,36 @@ public final class TgoParticipant: NSObject, ObservableObject {
     }
     
     public func isMicrophoneEnabled() -> Bool {
-        return localParticipant?.isMicrophoneEnabled() ?? remoteParticipant?.isMicrophoneEnabled() ?? false
+        if let local = localParticipant {
+            return local.isMicrophoneEnabled()
+        }
+        if let remote = remoteParticipant {
+            // 对于远程用户，检查是否有已发布的麦克风轨道（不管是否已订阅）
+            let hasPublishedMic = remote.trackPublications.contains { 
+                $0.source == .microphone && !$0.isMuted 
+            }
+            let lkEnabled = remote.isMicrophoneEnabled()
+            return hasPublishedMic || lkEnabled
+        }
+        return false
     }
     
     public func isCameraEnabled() -> Bool {
-        return localParticipant?.isCameraEnabled() ?? remoteParticipant?.isCameraEnabled() ?? false
+        if let local = localParticipant {
+            return local.isCameraEnabled()
+        }
+        if let remote = remoteParticipant {
+            // 对于远程用户，检查是否有已发布的摄像头轨道（不管是否已订阅）
+            // 因为 isCameraEnabled() 可能只在订阅后才返回 true
+            let hasPublishedCamera = remote.trackPublications.contains { 
+                $0.source == .camera && !$0.isMuted 
+            }
+            let lkEnabled = remote.isCameraEnabled()
+            
+            // 如果有已发布且未静音的摄像头轨道，或者 LiveKit 认为已启用，都返回 true
+            return hasPublishedCamera || lkEnabled
+        }
+        return false
     }
     
     public func isScreenShareEnabled() -> Bool {
@@ -379,6 +426,9 @@ public final class TgoParticipant: NSObject, ObservableObject {
         let micEnabled = isMicrophoneEnabled()
         let camEnabled = isCameraEnabled()
         let speaking = localParticipant?.isSpeaking ?? remoteParticipant?.isSpeaking ?? false
+        
+        let listenerCount = microphoneListeners.count + cameraListeners.count + speakingListeners.count
+        TgoLogger.shared.debug("notifyInitialState - uid: \(uid), mic: \(micEnabled), camera: \(camEnabled), speaking: \(speaking), 监听器数量: \(listenerCount)")
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self, !self.isDisposed else { return }
