@@ -552,8 +552,7 @@ extension TgoParticipant: ParticipantDelegate {
     }
     
     // MARK: 订阅远程轨道（远程用户）
-    // 正确的 API 签名：didSubscribe（不是 didSubscribeTrack）
-    public func participant(_ participant: RemoteParticipant, didSubscribe publication: RemoteTrackPublication, track: Track) {
+    public func participant(_ participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
         guard !isDisposed else { return }
         let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         TgoLogger.shared.info("订阅远程轨道 (ParticipantDelegate) - uid: \(uid), source: \(sourceName), muted: \(publication.isMuted)")
@@ -563,8 +562,7 @@ extension TgoParticipant: ParticipantDelegate {
     }
     
     // MARK: 取消订阅远程轨道（远程用户）
-    // 正确的 API 签名：didUnsubscribe（不是 didUnsubscribeTrack）
-    public func participant(_ participant: RemoteParticipant, didUnsubscribe publication: RemoteTrackPublication, track: Track) {
+    public func participant(_ participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication) {
         guard !isDisposed else { return }
         let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         TgoLogger.shared.info("取消订阅远程轨道 (ParticipantDelegate) - uid: \(uid), source: \(sourceName)")
