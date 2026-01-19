@@ -62,10 +62,10 @@ public final class TgoParticipant: NSObject, ObservableObject {
         self.initListener()
         
         // 打印远程用户当前的轨道状态，用于诊断
-        let publications = participant.trackPublications
+        let publications = Array(participant.trackPublications.values)
         TgoLogger.shared.debug("远程用户轨道数量: \(publications.count)")
         for pub in publications {
-            let sourceName = pub.source == .microphone ? "麦克风" : (pub.source == .camera ? "摄像头" : "其他")
+            let sourceName = pub.source == Track.Source.microphone ? "麦克风" : (pub.source == Track.Source.camera ? "摄像头" : "其他")
             TgoLogger.shared.debug("  - 轨道: \(sourceName), subscribed: \(pub.isSubscribed), muted: \(pub.isMuted)")
         }
         
@@ -102,7 +102,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
         return remoteParticipant != nil || localParticipant != nil
     }
     
-    public func getVideoTrack(source: Track.Source = .camera) -> VideoTrack? {
+    public func getVideoTrack(source: Track.Source = Track.Source.camera) -> VideoTrack? {
         if let local = localParticipant {
             return local.videoTracks.first(where: { $0.source == source })?.track as? VideoTrack
         }
@@ -118,8 +118,8 @@ public final class TgoParticipant: NSObject, ObservableObject {
         }
         if let remote = remoteParticipant {
             // 对于远程用户，检查是否有已发布的麦克风轨道（不管是否已订阅）
-            let hasPublishedMic = remote.trackPublications.contains { 
-                $0.source == .microphone && !$0.isMuted 
+            let hasPublishedMic = remote.trackPublications.values.contains { pub in
+                pub.source == Track.Source.microphone && !pub.isMuted 
             }
             let lkEnabled = remote.isMicrophoneEnabled()
             return hasPublishedMic || lkEnabled
@@ -134,8 +134,8 @@ public final class TgoParticipant: NSObject, ObservableObject {
         if let remote = remoteParticipant {
             // 对于远程用户，检查是否有已发布的摄像头轨道（不管是否已订阅）
             // 因为 isCameraEnabled() 可能只在订阅后才返回 true
-            let hasPublishedCamera = remote.trackPublications.contains { 
-                $0.source == .camera && !$0.isMuted 
+            let hasPublishedCamera = remote.trackPublications.values.contains { pub in
+                pub.source == Track.Source.camera && !pub.isMuted 
             }
             let lkEnabled = remote.isCameraEnabled()
             
@@ -203,7 +203,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
         }
         
         // 获取摄像头视频轨道
-        guard let cameraTrack = local.localVideoTracks.first(where: { $0.source == .camera })?.track as? LocalVideoTrack,
+        guard let cameraTrack = local.localVideoTracks.first(where: { $0.source == Track.Source.camera })?.track as? LocalVideoTrack,
               let cameraCapturer = cameraTrack.capturer as? CameraCapturer else {
             TgoLogger.shared.warning("切换摄像头失败: 找不到摄像头轨道或 CameraCapturer")
             return
@@ -367,16 +367,16 @@ public final class TgoParticipant: NSObject, ObservableObject {
     public func handleTrackMuteChanged(source: Track.Source, muted: Bool) {
         guard !isDisposed else { return }
         
-        let sourceName = source == .microphone ? "麦克风" : (source == .camera ? "摄像头" : "其他")
+        let sourceName = source == Track.Source.microphone ? "麦克风" : (source == Track.Source.camera ? "摄像头" : "其他")
         let isEnabled = !muted
         TgoLogger.shared.info("处理轨道状态变化 - uid: \(uid), source: \(sourceName), enabled: \(isEnabled)")
         
-        if source == .microphone {
+        if source == Track.Source.microphone {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.microphoneListeners.values { listener(isEnabled) }
             }
-        } else if source == .camera {
+        } else if source == Track.Source.camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.cameraListeners.values { listener(isEnabled) }
@@ -508,14 +508,14 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: Participant, didUpdatePublication publication: TrackPublication, muted: Bool) {
         guard !isDisposed else { return }
-        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         TgoLogger.shared.info("轨道状态更新 - uid: \(uid), source: \(sourceName), muted: \(muted)")
-        if publication.source == .microphone {
+        if publication.source == Track.Source.microphone {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.microphoneListeners.values { listener(!muted) }
             }
-        } else if publication.source == .camera {
+        } else if publication.source == Track.Source.camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.cameraListeners.values { listener(!muted) }
@@ -525,14 +525,14 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: Participant, didPublishPublication publication: TrackPublication) {
         guard !isDisposed else { return }
-        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "屏幕共享")
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "屏幕共享")
         TgoLogger.shared.info("轨道发布 - uid: \(uid), source: \(sourceName)")
-        if publication.source == .camera {
+        if publication.source == Track.Source.camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.cameraListeners.values { listener(true) }
             }
-        } else if publication.source == .microphone {
+        } else if publication.source == Track.Source.microphone {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.microphoneListeners.values { listener(true) }
@@ -546,14 +546,14 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: Participant, didUnpublishPublication publication: TrackPublication) {
         guard !isDisposed else { return }
-        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "屏幕共享")
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "屏幕共享")
         TgoLogger.shared.info("轨道取消发布 - uid: \(uid), source: \(sourceName)")
-        if publication.source == .camera {
+        if publication.source == Track.Source.camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.cameraListeners.values { listener(false) }
             }
-        } else if publication.source == .microphone {
+        } else if publication.source == Track.Source.microphone {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.microphoneListeners.values { listener(false) }
@@ -567,14 +567,14 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: RemoteParticipant, didSubscribePublication publication: RemoteTrackPublication, track: Track) {
         guard !isDisposed else { return }
-        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         TgoLogger.shared.info("订阅远程轨道 - uid: \(uid), source: \(sourceName)")
-        if publication.source == .camera {
+        if publication.source == Track.Source.camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.cameraListeners.values { listener(true) }
             }
-        } else if publication.source == .microphone {
+        } else if publication.source == Track.Source.microphone {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.microphoneListeners.values { listener(true) }
@@ -584,14 +584,14 @@ extension TgoParticipant: ParticipantDelegate {
     
     public func participant(_ participant: RemoteParticipant, didUnsubscribePublication publication: RemoteTrackPublication, track: Track) {
         guard !isDisposed else { return }
-        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         TgoLogger.shared.info("取消订阅远程轨道 - uid: \(uid), source: \(sourceName)")
-        if publication.source == .camera {
+        if publication.source == Track.Source.camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.cameraListeners.values { listener(false) }
             }
-        } else if publication.source == .microphone {
+        } else if publication.source == Track.Source.microphone {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.microphoneListeners.values { listener(false) }
@@ -602,16 +602,16 @@ extension TgoParticipant: ParticipantDelegate {
     // 远程用户轨道启用/禁用状态变化 (mute/unmute)
     public func participant(_ participant: RemoteParticipant, didUpdatePublication publication: RemoteTrackPublication) {
         guard !isDisposed else { return }
-        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         let isEnabled = !publication.isMuted
         TgoLogger.shared.info("远程轨道状态变化 - uid: \(uid), source: \(sourceName), enabled: \(isEnabled), muted: \(publication.isMuted)")
         
-        if publication.source == .microphone {
+        if publication.source == Track.Source.microphone {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.microphoneListeners.values { listener(isEnabled) }
             }
-        } else if publication.source == .camera {
+        } else if publication.source == Track.Source.camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
                 for listener in self.cameraListeners.values { listener(isEnabled) }
@@ -622,7 +622,7 @@ extension TgoParticipant: ParticipantDelegate {
     // 远程用户 Track 更新
     public func participant(_ participant: RemoteParticipant, didUpdateTrack publication: RemoteTrackPublication) {
         guard !isDisposed else { return }
-        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         TgoLogger.shared.debug("远程轨道更新 - uid: \(uid), source: \(sourceName), subscribed: \(publication.isSubscribed), muted: \(publication.isMuted)")
     }
 }

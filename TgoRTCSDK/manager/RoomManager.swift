@@ -215,7 +215,7 @@ extension RoomManager: RoomDelegate {
     public func room(_ room: Room, participant: Participant, didUpdatePublication publication: TrackPublication, muted: Bool) {
         // 处理本地和远程用户的 mute/unmute 事件
         let identity = participant.identity?.stringValue ?? "unknown"
-        let sourceName = publication.source == .microphone ? "麦克风" : (publication.source == .camera ? "摄像头" : "其他")
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         let isRemote = participant is RemoteParticipant
         
         TgoLogger.shared.info("轨道 mute 状态变化 (RoomDelegate) - uid: \(identity), source: \(sourceName), muted: \(muted), isRemote: \(isRemote)")
