@@ -234,4 +234,62 @@ extension RoomManager: RoomDelegate {
             }
         }
     }
+    
+    // MARK: - 远程用户轨道发布事件（关键！）
+    
+    /// 远程用户发布了新轨道
+    public func room(_ room: Room, participant: RemoteParticipant, didPublishTrack publication: RemoteTrackPublication) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
+        
+        TgoLogger.shared.info("远程用户发布轨道 (RoomDelegate) - uid: \(identity), source: \(sourceName), muted: \(publication.isMuted)")
+        
+        // 通知对应的 TgoParticipant
+        let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
+        if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
+            tgoParticipant.handleRemoteTrackPublished(source: publication.source, muted: publication.isMuted)
+        }
+    }
+    
+    /// 远程用户取消发布轨道
+    public func room(_ room: Room, participant: RemoteParticipant, didUnpublishTrack publication: RemoteTrackPublication) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
+        
+        TgoLogger.shared.info("远程用户取消发布轨道 (RoomDelegate) - uid: \(identity), source: \(sourceName)")
+        
+        // 通知对应的 TgoParticipant
+        let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
+        if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
+            tgoParticipant.handleRemoteTrackUnpublished(source: publication.source)
+        }
+    }
+    
+    /// 本地订阅了远程轨道（关键！这是最可靠的事件）
+    public func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication, track: Track) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
+        
+        TgoLogger.shared.info("订阅远程轨道 (RoomDelegate) - uid: \(identity), source: \(sourceName), muted: \(publication.isMuted)")
+        
+        // 通知对应的 TgoParticipant
+        let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
+        if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
+            tgoParticipant.handleRemoteTrackSubscribed(source: publication.source, muted: publication.isMuted)
+        }
+    }
+    
+    /// 本地取消订阅远程轨道
+    public func room(_ room: Room, participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication, track: Track) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
+        
+        TgoLogger.shared.info("取消订阅远程轨道 (RoomDelegate) - uid: \(identity), source: \(sourceName)")
+        
+        // 通知对应的 TgoParticipant
+        let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
+        if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
+            tgoParticipant.handleRemoteTrackUnsubscribed(source: publication.source)
+        }
+    }
 }

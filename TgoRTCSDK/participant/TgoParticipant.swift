@@ -84,6 +84,57 @@ public final class TgoParticipant: NSObject, ObservableObject {
                 for listener in self.trackPublishedListeners.values { listener() }
             }
         }
+        
+        // 开始监控轨道变化（因为摄像头轨道可能稍后才同步过来）
+        startTrackMonitoring(for: participant)
+    }
+    
+    /// 监控远程用户的轨道变化，因为轨道可能在连接后才同步过来
+    private func startTrackMonitoring(for participant: RemoteParticipant) {
+        // 延迟检查，等待轨道同步
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self, !self.isDisposed else { return }
+            self.checkAndNotifyTrackState()
+        }
+        
+        // 再次延迟检查
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self = self, !self.isDisposed else { return }
+            self.checkAndNotifyTrackState()
+        }
+        
+        // 第三次延迟检查
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self, !self.isDisposed else { return }
+            self.checkAndNotifyTrackState()
+        }
+    }
+    
+    /// 检查并通知当前轨道状态
+    private func checkAndNotifyTrackState() {
+        guard let remote = remoteParticipant else { return }
+        
+        let publications = Array(remote.trackPublications.values)
+        let hasCameraTrack = publications.contains { $0.source == Track.Source.camera }
+        let camEnabled = isCameraEnabled()
+        let micEnabled = isMicrophoneEnabled()
+        
+        TgoLogger.shared.debug("轨道状态检查 - uid: \(uid), 轨道数: \(publications.count), 有摄像头: \(hasCameraTrack), camera: \(camEnabled), mic: \(micEnabled)")
+        
+        // 通知监听器当前状态
+        for listener in cameraListeners.values {
+            listener(camEnabled)
+        }
+        for listener in microphoneListeners.values {
+            listener(micEnabled)
+        }
+        
+        // 如果有轨道，通知 trackPublished
+        if !publications.isEmpty {
+            for listener in trackPublishedListeners.values {
+                listener()
+            }
+        }
     }
     
     public func setTimeout(_ value: Bool) {
@@ -371,15 +422,82 @@ public final class TgoParticipant: NSObject, ObservableObject {
         let isEnabled = !muted
         TgoLogger.shared.info("处理轨道状态变化 - uid: \(uid), source: \(sourceName), enabled: \(isEnabled)")
         
+        notifyTrackStateChange(source: source, enabled: isEnabled)
+    }
+    
+    /// 处理远程轨道发布事件
+    public func handleRemoteTrackPublished(source: Track.Source, muted: Bool) {
+        guard !isDisposed else { return }
+        
+        let sourceName = source == Track.Source.microphone ? "麦克风" : (source == Track.Source.camera ? "摄像头" : "其他")
+        let isEnabled = !muted
+        TgoLogger.shared.info("处理远程轨道发布 - uid: \(uid), source: \(sourceName), enabled: \(isEnabled)")
+        
+        notifyTrackStateChange(source: source, enabled: isEnabled)
+        
+        // 通知 trackPublished 监听器
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, !self.isDisposed else { return }
+            for listener in self.trackPublishedListeners.values { listener() }
+        }
+    }
+    
+    /// 处理远程轨道取消发布事件
+    public func handleRemoteTrackUnpublished(source: Track.Source) {
+        guard !isDisposed else { return }
+        
+        let sourceName = source == Track.Source.microphone ? "麦克风" : (source == Track.Source.camera ? "摄像头" : "其他")
+        TgoLogger.shared.info("处理远程轨道取消发布 - uid: \(uid), source: \(sourceName)")
+        
+        notifyTrackStateChange(source: source, enabled: false)
+        
+        // 通知 trackUnpublished 监听器
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, !self.isDisposed else { return }
+            for listener in self.trackUnpublishedListeners.values { listener() }
+        }
+    }
+    
+    /// 处理远程轨道订阅事件（最可靠的事件！）
+    public func handleRemoteTrackSubscribed(source: Track.Source, muted: Bool) {
+        guard !isDisposed else { return }
+        
+        let sourceName = source == Track.Source.microphone ? "麦克风" : (source == Track.Source.camera ? "摄像头" : "其他")
+        let isEnabled = !muted
+        TgoLogger.shared.info("处理远程轨道订阅 - uid: \(uid), source: \(sourceName), enabled: \(isEnabled)")
+        
+        notifyTrackStateChange(source: source, enabled: isEnabled)
+        
+        // 通知 trackPublished 监听器
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, !self.isDisposed else { return }
+            for listener in self.trackPublishedListeners.values { listener() }
+        }
+    }
+    
+    /// 处理远程轨道取消订阅事件
+    public func handleRemoteTrackUnsubscribed(source: Track.Source) {
+        guard !isDisposed else { return }
+        
+        let sourceName = source == Track.Source.microphone ? "麦克风" : (source == Track.Source.camera ? "摄像头" : "其他")
+        TgoLogger.shared.info("处理远程轨道取消订阅 - uid: \(uid), source: \(sourceName)")
+        
+        notifyTrackStateChange(source: source, enabled: false)
+    }
+    
+    /// 统一的轨道状态通知方法
+    private func notifyTrackStateChange(source: Track.Source, enabled: Bool) {
         if source == Track.Source.microphone {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
-                for listener in self.microphoneListeners.values { listener(isEnabled) }
+                TgoLogger.shared.debug("通知麦克风监听器 - uid: \(self.uid), enabled: \(enabled), 监听器数量: \(self.microphoneListeners.count)")
+                for listener in self.microphoneListeners.values { listener(enabled) }
             }
         } else if source == Track.Source.camera {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.isDisposed else { return }
-                for listener in self.cameraListeners.values { listener(isEnabled) }
+                TgoLogger.shared.debug("通知摄像头监听器 - uid: \(self.uid), enabled: \(enabled), 监听器数量: \(self.cameraListeners.count)")
+                for listener in self.cameraListeners.values { listener(enabled) }
             }
         }
     }
