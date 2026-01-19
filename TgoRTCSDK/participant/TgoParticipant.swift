@@ -154,22 +154,35 @@ public final class TgoParticipant: NSObject, ObservableObject {
             TgoLogger.shared.warning("切换摄像头失败: localParticipant 为空")
             return
         }
+        
+        // 获取摄像头视频轨道
+        guard let cameraTrack = local.localVideoTracks.first(where: { $0.source == .camera })?.track as? LocalVideoTrack,
+              let cameraCapturer = cameraTrack.capturer as? CameraCapturer else {
+            TgoLogger.shared.warning("切换摄像头失败: 找不到摄像头轨道或 CameraCapturer")
+            return
+        }
+        
         let oldPos = currentCameraPosition
         TgoLogger.shared.info("开始切换摄像头 - uid: \(uid), 当前: \(oldPos == .front ? "前置" : "后置")")
+        
         Task {
             do {
-                // 切换摄像头位置
-                let newPos: AVCaptureDevice.Position = (currentCameraPosition == .front) ? .back : .front
+                // 使用 CameraCapturer 的 switchCameraPosition 方法
+                let success = try await cameraCapturer.switchCameraPosition()
                 
-                try await local.setCamera(enabled: true, captureOptions: CameraCaptureOptions(position: newPos))
-                
-                currentCameraPosition = newPos
-                TgoLogger.shared.info("切换摄像头成功 - uid: \(uid), 新位置: \(newPos == .front ? "前置" : "后置")")
-                
-                DispatchQueue.main.async {
-                    for listener in self.cameraPositionListeners.values {
-                        listener(newPos == .front ? .front : .back)
+                if success {
+                    // 更新当前摄像头位置
+                    currentCameraPosition = (currentCameraPosition == .front) ? .back : .front
+                    let newPos = currentCameraPosition
+                    TgoLogger.shared.info("切换摄像头成功 - uid: \(uid), 新位置: \(newPos == .front ? "前置" : "后置")")
+                    
+                    DispatchQueue.main.async {
+                        for listener in self.cameraPositionListeners.values {
+                            listener(newPos == .front ? .front : .back)
+                        }
                     }
+                } else {
+                    TgoLogger.shared.warning("切换摄像头返回 false")
                 }
             } catch {
                 TgoLogger.shared.error("切换摄像头失败: \(error.localizedDescription)")
@@ -299,6 +312,29 @@ public final class TgoParticipant: NSObject, ObservableObject {
             listener(currentVideoInfo)
         }
         return ListenerToken { [weak self] in self?.videoInfoListeners.removeValue(forKey: id) }
+    }
+    
+    // MARK: - Track State Handling (called from RoomDelegate)
+    
+    /// 处理轨道 mute 状态变化（由 RoomManager 调用）
+    public func handleTrackMuteChanged(source: Track.Source, muted: Bool) {
+        guard !isDisposed else { return }
+        
+        let sourceName = source == .microphone ? "麦克风" : (source == .camera ? "摄像头" : "其他")
+        let isEnabled = !muted
+        TgoLogger.shared.info("处理轨道状态变化 - uid: \(uid), source: \(sourceName), enabled: \(isEnabled)")
+        
+        if source == .microphone {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !self.isDisposed else { return }
+                for listener in self.microphoneListeners.values { listener(isEnabled) }
+            }
+        } else if source == .camera {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !self.isDisposed else { return }
+                for listener in self.cameraListeners.values { listener(isEnabled) }
+            }
+        }
     }
 
     private func initListener() {
