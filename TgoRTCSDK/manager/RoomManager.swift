@@ -216,7 +216,8 @@ extension RoomManager: RoomDelegate {
     // 原因：轨道订阅事件可能在 TgoParticipant.setRemoteParticipant 之前触发
     // 此时 ParticipantDelegate 还没设置，会错过事件
     
-    public func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication, track: Track) {
+    // 正确的 API 签名：didSubscribe（不是 didSubscribeTrack）
+    public func room(_ room: Room, participant: RemoteParticipant, didSubscribe publication: RemoteTrackPublication, track: Track) {
         let identity = participant.identity?.stringValue ?? "unknown"
         let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         
@@ -229,7 +230,8 @@ extension RoomManager: RoomDelegate {
         }
     }
     
-    public func room(_ room: Room, participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication, track: Track) {
+    // 正确的 API 签名：didUnsubscribe（不是 didUnsubscribeTrack）
+    public func room(_ room: Room, participant: RemoteParticipant, didUnsubscribe publication: RemoteTrackPublication, track: Track) {
         let identity = participant.identity?.stringValue ?? "unknown"
         let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
         

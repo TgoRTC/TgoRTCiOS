@@ -439,11 +439,18 @@ public final class TgoParticipant: NSObject, ObservableObject {
     
     public func notifyLeave() {
         TgoLogger.shared.info("用户离开房间 - uid: \(uid), isLocal: \(isLocal())")
-        let listeners = leaveListeners.values
-        DispatchQueue.main.async {
-            for listener in listeners { listener() }
+        // 必须先复制为数组，因为 dispose() 会清空 leaveListeners
+        let listeners = Array(leaveListeners.values)
+        TgoLogger.shared.debug("通知离开事件 - uid: \(uid), 监听器数量: \(listeners.count)")
+        
+        // 先通知，再 dispose
+        DispatchQueue.main.async { [weak self] in
+            for listener in listeners { 
+                listener() 
+            }
+            // dispose 放在通知之后
+            self?.dispose()
         }
-        dispose()
     }
     
     private func notifyInitialState() {
@@ -545,20 +552,22 @@ extension TgoParticipant: ParticipantDelegate {
     }
     
     // MARK: 订阅远程轨道（远程用户）
-    public func participant(_ participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication, track: Track) {
+    // 正确的 API 签名：didSubscribe（不是 didSubscribeTrack）
+    public func participant(_ participant: RemoteParticipant, didSubscribe publication: RemoteTrackPublication, track: Track) {
         guard !isDisposed else { return }
         let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("订阅远程轨道 - uid: \(uid), source: \(sourceName), muted: \(publication.isMuted)")
+        TgoLogger.shared.info("订阅远程轨道 (ParticipantDelegate) - uid: \(uid), source: \(sourceName), muted: \(publication.isMuted)")
         
         notifyTrackState(source: publication.source, enabled: !publication.isMuted)
         notifyTrackPublished()
     }
     
     // MARK: 取消订阅远程轨道（远程用户）
-    public func participant(_ participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication, track: Track) {
+    // 正确的 API 签名：didUnsubscribe（不是 didUnsubscribeTrack）
+    public func participant(_ participant: RemoteParticipant, didUnsubscribe publication: RemoteTrackPublication, track: Track) {
         guard !isDisposed else { return }
         let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("取消订阅远程轨道 - uid: \(uid), source: \(sourceName)")
+        TgoLogger.shared.info("取消订阅远程轨道 (ParticipantDelegate) - uid: \(uid), source: \(sourceName)")
         
         notifyTrackState(source: publication.source, enabled: false)
         notifyTrackUnpublished()
