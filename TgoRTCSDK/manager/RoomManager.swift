@@ -212,6 +212,53 @@ extension RoomManager: RoomDelegate {
         ParticipantManager.shared.setParticipantLeave(participant: participant)
     }
     
-    // 注意：轨道状态变化事件由 TgoParticipant 的 ParticipantDelegate 直接处理
-    // 不需要在 RoomDelegate 中重复处理，避免重复回调
+    // MARK: - 远程轨道订阅事件（必须在 RoomDelegate 中处理）
+    // 原因：轨道订阅事件可能在 TgoParticipant.setRemoteParticipant 之前触发
+    // 此时 ParticipantDelegate 还没设置，会错过事件
+    
+    public func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication, track: Track) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
+        
+        TgoLogger.shared.info("订阅远程轨道 (RoomDelegate) - uid: \(identity), source: \(sourceName), muted: \(publication.isMuted)")
+        
+        // 通知对应的 TgoParticipant
+        let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
+        if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
+            tgoParticipant.notifyRemoteTrackSubscribed(source: publication.source, muted: publication.isMuted)
+        }
+    }
+    
+    public func room(_ room: Room, participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication, track: Track) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
+        
+        TgoLogger.shared.info("取消订阅远程轨道 (RoomDelegate) - uid: \(identity), source: \(sourceName)")
+        
+        // 通知对应的 TgoParticipant
+        let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
+        if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
+            tgoParticipant.notifyRemoteTrackUnsubscribed(source: publication.source)
+        }
+    }
+    
+    // 轨道 mute 状态变化（核心回调）
+    public func room(_ room: Room, participant: Participant, trackPublication: TrackPublication, didUpdateIsMuted isMuted: Bool) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        let sourceName = trackPublication.source == Track.Source.microphone ? "麦克风" : (trackPublication.source == Track.Source.camera ? "摄像头" : "其他")
+        
+        TgoLogger.shared.info("轨道 mute 状态变化 (RoomDelegate) - uid: \(identity), source: \(sourceName), isMuted: \(isMuted)")
+        
+        // 通知对应的 TgoParticipant
+        if participant is RemoteParticipant {
+            let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
+            if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
+                tgoParticipant.notifyTrackMuteChanged(source: trackPublication.source, muted: isMuted)
+            }
+        } else {
+            if let localParticipant = ParticipantManager.shared.getLocalParticipant() {
+                localParticipant.notifyTrackMuteChanged(source: trackPublication.source, muted: isMuted)
+            }
+        }
+    }
 }
