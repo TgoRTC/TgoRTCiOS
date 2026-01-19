@@ -28,7 +28,7 @@ public final class ParticipantManager {
         if localParticipant == nil {
             localParticipant = TgoParticipant(uid: loginUID, localParticipant: lkParticipant, remoteParticipant: nil)
         } else if let lkParticipant = lkParticipant {
-            localParticipant?.setLocalParticipant(participant: lkParticipant)
+            localParticipant?.setLocalParticipant(lkParticipant)
         }
         
         return localParticipant
@@ -74,9 +74,9 @@ public final class ParticipantManager {
             }
             
             if let lkParticipant = lkParticipant {
-                tgoParticipant.setRemoteParticipant(participant: lkParticipant)
+                tgoParticipant.setRemoteParticipant(lkParticipant)
                 if tgoParticipant.isTimeout {
-                    tgoParticipant.setTimeout(false)
+                    tgoParticipant.markTimeout(false)
                 }
             }
             
@@ -99,9 +99,9 @@ public final class ParticipantManager {
                 remoteParticipants[identity] = tgoParticipant
             }
             
-            tgoParticipant.setRemoteParticipant(participant: lkParticipant)
+            tgoParticipant.setRemoteParticipant(lkParticipant)
             if tgoParticipant.isTimeout {
-                tgoParticipant.setTimeout(false)
+                tgoParticipant.markTimeout(false)
             }
             list.append(tgoParticipant)
         }
@@ -157,7 +157,7 @@ public final class ParticipantManager {
         
         if let existing = remoteParticipants[identity] {
             TgoLogger.shared.debug("更新已存在的参与者 - uid: \(identity)")
-            existing.setRemoteParticipant(participant: participant)
+            existing.setRemoteParticipant(participant)
             return
         }
         

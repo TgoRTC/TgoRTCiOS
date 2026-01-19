@@ -26,7 +26,8 @@ struct CallView: View {
     
     @State private var pulseValue: Double = 0.0
     
-    // Keep listener tokens alive to prevent immediate cancellation
+    // Combine 订阅
+    @State private var cancellables = Set<AnyCancellable>()
     @State private var connectionStatusToken: ListenerToken?
     @State private var participantToken: ListenerToken?
     
@@ -218,7 +219,6 @@ struct CallView: View {
             loginUID: uid
         )
         
-        // Store tokens to prevent immediate cancellation
         connectionStatusToken = TgoRTC.shared.roomManager.addConnectionStatusListener { roomName, status in
             DispatchQueue.main.async {
                 switch status {
@@ -231,6 +231,7 @@ struct CallView: View {
                     self.statusMessage = "已连接"
                     self.localParticipant = TgoRTC.shared.participantManager.getLocalParticipant()
                     self.updateParticipants()
+                    self.subscribeToLocalParticipant()
                 case .disconnected:
                     self.isConnected = false
                     self.isConnecting = false
@@ -254,6 +255,21 @@ struct CallView: View {
         }
     }
     
+    private func subscribeToLocalParticipant() {
+        guard let local = localParticipant else { return }
+        
+        // 使用 Combine 订阅本地用户状态变化
+        local.$isMicrophoneOn
+            .receive(on: DispatchQueue.main)
+            .sink { self.isMicEnabled = $0 }
+            .store(in: &cancellables)
+        
+        local.$isCameraOn
+            .receive(on: DispatchQueue.main)
+            .sink { self.isCameraEnabled = $0 }
+            .store(in: &cancellables)
+    }
+    
     private func updateParticipants() {
         DispatchQueue.main.async {
             self.participants = TgoRTC.shared.participantManager.getAllParticipants()
@@ -263,22 +279,14 @@ struct CallView: View {
     private func toggleMicrophone() {
         guard let local = localParticipant else { return }
         Task {
-            let nextState = !isMicEnabled
-            await local.setMicrophoneEnabled(enable: nextState)
-            await MainActor.run {
-                self.isMicEnabled = nextState
-            }
+            await local.setMicrophoneEnabled(!isMicEnabled)
         }
     }
     
     private func toggleCamera() {
         guard let local = localParticipant else { return }
         Task {
-            let nextState = !isCameraEnabled
-            await local.setCameraEnabled(enabled: nextState)
-            await MainActor.run {
-                self.isCameraEnabled = nextState
-            }
+            await local.setCameraEnabled(!isCameraEnabled)
         }
     }
     
@@ -288,11 +296,11 @@ struct CallView: View {
     }
     
     private func leaveRoom() {
-        // Cancel listener tokens
         connectionStatusToken?.cancel()
         participantToken?.cancel()
         connectionStatusToken = nil
         participantToken = nil
+        cancellables.removeAll()
         
         Task {
             let api = TgoRTCApi(baseUrl: serverUrl)
@@ -304,15 +312,11 @@ struct CallView: View {
 
 struct ParticipantTile: View {
     @ObservedObject var participant: TgoParticipant
-    @State private var camEnabled: Bool = false
-    @State private var micEnabled: Bool = false
-    @State private var cameraToken: ListenerToken?
-    @State private var micToken: ListenerToken?
-    @State private var trackToken: ListenerToken?
     
     var body: some View {
         ZStack {
-            if camEnabled, participant.getVideoTrack(source: .camera) != nil {
+            // 直接使用 @Published 属性，SwiftUI 自动订阅变化
+            if participant.isCameraOn, participant.getVideoTrack(source: .camera) != nil {
                 TgoTrackRenderer(participant: participant, source: .camera, fit: .fill)
             } else {
                 Color(hex: "1A1A3E")
@@ -321,7 +325,7 @@ struct ParticipantTile: View {
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: participant.isLocal() ? 
+                                    colors: participant.isLocal ? 
                                         [Color(hex: "6366F1"), Color(hex: "8B5CF6")] : 
                                         [Color(hex: "10B981"), Color(hex: "059669")],
                                     startPoint: .topLeading,
@@ -340,7 +344,7 @@ struct ParticipantTile: View {
             // Overlay
             VStack {
                 HStack {
-                    if participant.isLocal() {
+                    if participant.isLocal {
                         Text("本地")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.white)
@@ -356,14 +360,15 @@ struct ParticipantTile: View {
                 Spacer()
                 
                 HStack {
-                    Text(participant.isLocal() ? "我" : formatUid(participant.uid))
+                    Text(participant.isLocal ? "我" : formatUid(participant.uid))
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.white)
                         .lineLimit(1)
                     
                     Spacer()
                     
-                    if !micEnabled {
+                    // 直接使用 @Published 属性
+                    if !participant.isMicrophoneOn {
                         Image(systemName: "mic.slash.fill")
                             .font(.system(size: 12))
                             .foregroundColor(.white)
@@ -387,50 +392,8 @@ struct ParticipantTile: View {
         .cornerRadius(20)
         .overlay(
             RoundedRectangle(cornerRadius: 20)
-                .stroke(participant.isLocal() ? Color(hex: "6366F1").opacity(0.5) : Color.white.opacity(0.1), lineWidth: 2)
+                .stroke(participant.isLocal ? Color(hex: "6366F1").opacity(0.5) : Color.white.opacity(0.1), lineWidth: 2)
         )
-        .onAppear {
-            updateStatus()
-            
-            // Keep tokens alive to receive updates
-            cameraToken = participant.addCameraStatusListener { enabled in
-                DispatchQueue.main.async { 
-                    self.camEnabled = enabled
-                }
-            }
-            micToken = participant.addMicrophoneStatusListener { enabled in
-                DispatchQueue.main.async { 
-                    self.micEnabled = enabled 
-                }
-            }
-            // Listen for track published events to update camera state
-            trackToken = participant.addTrackPublishedListener {
-                DispatchQueue.main.async {
-                    updateStatus()
-                }
-            }
-        }
-        .onDisappear {
-            cameraToken?.cancel()
-            micToken?.cancel()
-            trackToken?.cancel()
-        }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            // Periodically check status as a fallback
-            let newCamEnabled = participant.isCameraEnabled()
-            let newMicEnabled = participant.isMicrophoneEnabled()
-            if newCamEnabled != camEnabled {
-                camEnabled = newCamEnabled
-            }
-            if newMicEnabled != micEnabled {
-                micEnabled = newMicEnabled
-            }
-        }
-    }
-    
-    private func updateStatus() {
-        self.camEnabled = participant.isCameraEnabled()
-        self.micEnabled = participant.isMicrophoneEnabled()
     }
     
     private func formatUid(_ uid: String) -> String {

@@ -9,243 +9,148 @@ import LiveKit
 import Combine
 import AVFoundation
 
-public typealias TgoVideoInfoListener = (VideoInfo) -> Void
-
+/// Represents a participant in a room (local or remote).
+/// 使用 Combine 的 @Published 属性来通知状态变化，符合 SwiftUI 的数据流模式
 public final class TgoParticipant: NSObject, ObservableObject {
-    public var uid: String
-    public var localParticipant: LocalParticipant?
-    public var remoteParticipant: RemoteParticipant?
     
-    // Video info related
-    private var videoInfoListeners: [UUID: TgoVideoInfoListener] = [:]
-    public private(set) var currentVideoInfo: VideoInfo = .empty
+    // MARK: - Identity
     
+    public let uid: String
     public let createdAt: Date = Date()
-    public private(set) var isTimeout: Bool = false
     
-    // Thread safety
-    private var isDisposed: Bool = false
-    private let lock = NSLock()
+    // MARK: - Published State (SwiftUI 可直接绑定)
     
-    public init(uid: String, localParticipant: LocalParticipant?, remoteParticipant: RemoteParticipant?) {
+    @Published public private(set) var isMicrophoneOn: Bool = false
+    @Published public private(set) var isCameraOn: Bool = false
+    @Published public private(set) var isSpeaking: Bool = false
+    @Published public private(set) var audioLevel: Float = 0
+    @Published public private(set) var connectionQuality: TgoConnectionQuality = .unknown
+    @Published public private(set) var cameraPosition: TgoCameraPosition = .front
+    @Published public private(set) var isTimeout: Bool = false
+    @Published public private(set) var hasJoined: Bool = false
+    @Published public private(set) var videoInfo: VideoInfo = .empty
+    
+    // MARK: - Event Publishers (一次性事件)
+    
+    public let onJoined = PassthroughSubject<Void, Never>()
+    public let onLeave = PassthroughSubject<Void, Never>()
+    public let onTimeout = PassthroughSubject<Void, Never>()
+    public let onTrackPublished = PassthroughSubject<Void, Never>()
+    public let onTrackUnpublished = PassthroughSubject<Void, Never>()
+    
+    // MARK: - Internal State
+    
+    public private(set) var localParticipant: LocalParticipant?
+    public private(set) var remoteParticipant: RemoteParticipant?
+    
+    private var isDisposed = false
+    private var audioLevelTimer: Timer?
+    private var cancellables = Set<AnyCancellable>()
+    
+    // MARK: - Computed Properties
+    
+    public var isLocal: Bool {
+        localParticipant != nil
+    }
+    
+    // MARK: - Init
+    
+    public init(uid: String, localParticipant: LocalParticipant? = nil, remoteParticipant: RemoteParticipant? = nil) {
         self.uid = uid
         self.localParticipant = localParticipant
         self.remoteParticipant = remoteParticipant
         super.init()
-        TgoLogger.shared.info("TgoParticipant 初始化 - uid: \(uid), isLocal: \(localParticipant != nil)")
-        self.initListener()
+        setupDelegate()
+        updateState()
     }
     
-    private var timeoutListeners: [UUID: () -> Void] = [:]
-    private var microphoneListeners: [UUID: (Bool) -> Void] = [:]
-    private var cameraListeners: [UUID: (Bool) -> Void] = [:]
-    private var speakerListeners: [UUID: (Bool) -> Void] = [:]
-    private var screenShareListeners: [UUID: (Bool) -> Void] = [:]
-    private var speakingListeners: [UUID: (Bool) -> Void] = [:]
-    private var cameraPositionListeners: [UUID: (TgoCameraPosition) -> Void] = [:]
-    private var connectionQualityListeners: [UUID: (TgoConnectionQuality) -> Void] = [:]
-    private var joinedListeners: [UUID: () -> Void] = [:]
-    private var leaveListeners: [UUID: () -> Void] = [:]
-    private var trackPublishedListeners: [UUID: () -> Void] = [:]
-    private var trackUnpublishedListeners: [UUID: () -> Void] = [:]
+    // MARK: - Get Video Track
     
-    public func setLocalParticipant(participant: LocalParticipant) {
-        TgoLogger.shared.info("本地用户加入房间 - uid: \(uid)")
+    public func getVideoTrack(source: Track.Source = .camera) -> VideoTrack? {
+        let participant = localParticipant ?? remoteParticipant
+        return participant?.videoTracks.first { $0.source == source }?.track as? VideoTrack
+    }
+    
+    // MARK: - Set Participant
+    
+    public func setLocalParticipant(_ participant: LocalParticipant) {
         self.localParticipant = participant
-        self.initListener()
-        self.notifyInitialState()
+        setupDelegate()
+        updateState()
+        
+        hasJoined = true
+        onJoined.send()
     }
     
-    public func setRemoteParticipant(participant: RemoteParticipant) {
-        TgoLogger.shared.info("远程用户加入房间 - uid: \(uid)")
+    public func setRemoteParticipant(_ participant: RemoteParticipant) {
         self.remoteParticipant = participant
-        self.initListener()
+        setupDelegate()
+        updateState()
         
-        // 遍历远程用户当前已有的轨道，主动通知状态
-        let publications = Array(participant.trackPublications.values)
-        TgoLogger.shared.debug("远程用户轨道数量: \(publications.count)")
+        hasJoined = true
+        onJoined.send()
         
-        var hasMic = false
-        var hasCamera = false
-        var micEnabled = false
-        var cameraEnabled = false
-        
-        for pub in publications {
-            let sourceName = pub.source == Track.Source.microphone ? "麦克风" : (pub.source == Track.Source.camera ? "摄像头" : "其他")
-            let isEnabled = !pub.isMuted
-            TgoLogger.shared.debug("  - 轨道: \(sourceName), subscribed: \(pub.isSubscribed), muted: \(pub.isMuted), enabled: \(isEnabled)")
-            
-            if pub.source == Track.Source.microphone {
-                hasMic = true
-                micEnabled = isEnabled
-            } else if pub.source == Track.Source.camera {
-                hasCamera = true
-                cameraEnabled = isEnabled
-            }
-        }
-        
-        TgoLogger.shared.info("远程用户初始状态 - uid: \(uid), hasMic: \(hasMic), hasCamera: \(hasCamera), mic: \(micEnabled), camera: \(cameraEnabled)")
-        
-        // 主动通知已有轨道的状态
-        if hasMic {
-            notifyTrackState(source: Track.Source.microphone, enabled: micEnabled)
-        }
-        if hasCamera {
-            notifyTrackState(source: Track.Source.camera, enabled: cameraEnabled)
-        }
-        
-        self.notifyJoined()
-        
-        // 如果有轨道，通知 trackPublished
-        if !publications.isEmpty {
-            notifyTrackPublished()
+        if !participant.trackPublications.isEmpty {
+            onTrackPublished.send()
         }
     }
     
-    public func setTimeout(_ value: Bool) {
-        self.isTimeout = value
+    public func markTimeout(_ value: Bool) {
+        isTimeout = value
         if value {
-            TgoLogger.shared.warning("用户超时 - uid: \(uid)")
-            self.notifyTimeout()
+            onTimeout.send()
         }
     }
     
-    public func isLocal() -> Bool {
-        return localParticipant != nil
+    public func notifyLeave() {
+        guard !isDisposed else { return }
+        onLeave.send()
+        dispose()
     }
     
-    public func isJoined() -> Bool {
-        return remoteParticipant != nil || localParticipant != nil
-    }
+    // MARK: - Control Methods (Local only)
     
-    public func getVideoTrack(source: Track.Source = Track.Source.camera) -> VideoTrack? {
-        if let local = localParticipant {
-            return local.videoTracks.first(where: { $0.source == source })?.track as? VideoTrack
-        }
-        if let remote = remoteParticipant {
-            return remote.videoTracks.first(where: { $0.source == source })?.track as? VideoTrack
-        }
-        return nil
-    }
-    
-    public func isMicrophoneEnabled() -> Bool {
-        if let local = localParticipant {
-            return local.isMicrophoneEnabled()
-        }
-        if let remote = remoteParticipant {
-            // 对于远程用户，检查是否有已发布的麦克风轨道（不管是否已订阅）
-            let hasPublishedMic = remote.trackPublications.values.contains { pub in
-                pub.source == Track.Source.microphone && !pub.isMuted 
-            }
-            let lkEnabled = remote.isMicrophoneEnabled()
-            return hasPublishedMic || lkEnabled
-        }
-        return false
-    }
-    
-    public func isCameraEnabled() -> Bool {
-        if let local = localParticipant {
-            return local.isCameraEnabled()
-        }
-        if let remote = remoteParticipant {
-            // 对于远程用户，检查是否有已发布的摄像头轨道（不管是否已订阅）
-            // 因为 isCameraEnabled() 可能只在订阅后才返回 true
-            let hasPublishedCamera = remote.trackPublications.values.contains { pub in
-                pub.source == Track.Source.camera && !pub.isMuted 
-            }
-            let lkEnabled = remote.isCameraEnabled()
-            
-            // 如果有已发布且未静音的摄像头轨道，或者 LiveKit 认为已启用，都返回 true
-            return hasPublishedCamera || lkEnabled
-        }
-        return false
-    }
-    
-    public func isScreenShareEnabled() -> Bool {
-        return localParticipant?.isScreenShareEnabled() ?? remoteParticipant?.isScreenShareEnabled() ?? false
-    }
-    
-    // only local
-    public func setMicrophoneEnabled(enable: Bool) async {
-        guard let local = localParticipant else {
-            TgoLogger.shared.warning("设置麦克风失败: localParticipant 为空")
-            return
-        }
-        TgoLogger.shared.info("设置麦克风状态 - uid: \(uid), enabled: \(enable)")
+    public func setMicrophoneEnabled(_ enabled: Bool) async {
+        guard let local = localParticipant else { return }
         do {
-            try await local.setMicrophone(enabled: enable)
-            TgoLogger.shared.debug("麦克风状态设置成功 - enabled: \(enable)")
+            try await local.setMicrophone(enabled: enabled)
+            await MainActor.run { isMicrophoneOn = enabled }
         } catch {
             TgoLogger.shared.error("设置麦克风失败: \(error.localizedDescription)")
         }
     }
     
-    // only local
-    public func setCameraEnabled(enabled: Bool) async {
-        guard let local = localParticipant else {
-            TgoLogger.shared.warning("设置摄像头失败: localParticipant 为空")
-            return
-        }
-        TgoLogger.shared.info("设置摄像头状态 - uid: \(uid), enabled: \(enabled)")
+    public func setCameraEnabled(_ enabled: Bool) async {
+        guard let local = localParticipant else { return }
         do {
             try await local.setCamera(enabled: enabled)
-            TgoLogger.shared.debug("摄像头状态设置成功 - enabled: \(enabled)")
+            await MainActor.run { isCameraOn = enabled }
         } catch {
             TgoLogger.shared.error("设置摄像头失败: \(error.localizedDescription)")
         }
     }
     
-    // only local
-    public func setScreenShareEnabled(enabled: Bool) async {
-        guard let local = localParticipant else {
-            TgoLogger.shared.warning("设置屏幕共享失败: localParticipant 为空")
-            return
-        }
-        TgoLogger.shared.info("设置屏幕共享状态 - uid: \(uid), enabled: \(enabled)")
+    public func setScreenShareEnabled(_ enabled: Bool) async {
+        guard let local = localParticipant else { return }
         do {
             try await local.setScreenShare(enabled: enabled)
-            TgoLogger.shared.debug("屏幕共享状态设置成功 - enabled: \(enabled)")
         } catch {
-            TgoLogger.shared.error("设置共享屏幕失败: \(error.localizedDescription)")
+            TgoLogger.shared.error("设置屏幕共享失败: \(error.localizedDescription)")
         }
     }
     
-    private var currentCameraPosition: AVCaptureDevice.Position = .front
-    
     public func switchCamera() {
-        guard let local = localParticipant else {
-            TgoLogger.shared.warning("切换摄像头失败: localParticipant 为空")
-            return
-        }
-        
-        // 获取摄像头视频轨道
-        guard let cameraTrack = local.localVideoTracks.first(where: { $0.source == Track.Source.camera })?.track as? LocalVideoTrack,
-              let cameraCapturer = cameraTrack.capturer as? CameraCapturer else {
-            TgoLogger.shared.warning("切换摄像头失败: 找不到摄像头轨道或 CameraCapturer")
-            return
-        }
-        
-        let oldPos = currentCameraPosition
-        TgoLogger.shared.info("开始切换摄像头 - uid: \(uid), 当前: \(oldPos == .front ? "前置" : "后置")")
+        guard let local = localParticipant,
+              let cameraTrack = local.localVideoTracks.first(where: { $0.source == .camera })?.track as? LocalVideoTrack,
+              let cameraCapturer = cameraTrack.capturer as? CameraCapturer else { return }
         
         Task {
             do {
-                // 使用 CameraCapturer 的 switchCameraPosition 方法
                 let success = try await cameraCapturer.switchCameraPosition()
-                
                 if success {
-                    // 更新当前摄像头位置
-                    currentCameraPosition = (currentCameraPosition == .front) ? .back : .front
-                    let newPos = currentCameraPosition
-                    TgoLogger.shared.info("切换摄像头成功 - uid: \(uid), 新位置: \(newPos == .front ? "前置" : "后置")")
-                    
-                    DispatchQueue.main.async {
-                        for listener in self.cameraPositionListeners.values {
-                            listener(newPos == .front ? .front : .back)
-                        }
+                    await MainActor.run {
+                        cameraPosition = (cameraPosition == .front) ? .back : .front
                     }
-                } else {
-                    TgoLogger.shared.warning("切换摄像头返回 false")
                 }
             } catch {
                 TgoLogger.shared.error("切换摄像头失败: \(error.localizedDescription)")
@@ -253,257 +158,40 @@ public final class TgoParticipant: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Listeners
+    // MARK: - Private Methods
     
-    public func addTimeoutListener(_ listener: @escaping () -> Void) -> ListenerToken {
-        let id = UUID()
-        timeoutListeners[id] = listener
-        // If already timeout, immediately notify
-        if isTimeout {
-            DispatchQueue.main.async {
-                listener()
-            }
-        }
-        return ListenerToken { [weak self] in self?.timeoutListeners.removeValue(forKey: id) }
+    private func setupDelegate() {
+        localParticipant?.add(delegate: self)
+        remoteParticipant?.add(delegate: self)
     }
     
-    public func addMicrophoneStatusListener(_ listener: @escaping (Bool) -> Void) -> ListenerToken {
-        let id = UUID()
-        microphoneListeners[id] = listener
-        // Immediately notify current state
-        let currentState = isMicrophoneEnabled()
-        TgoLogger.shared.debug("添加麦克风监听器 - uid: \(uid), 当前状态: \(currentState)")
-        DispatchQueue.main.async {
-            listener(currentState)
-        }
-        return ListenerToken { [weak self] in self?.microphoneListeners.removeValue(forKey: id) }
-    }
-    
-    public func addCameraStatusListener(_ listener: @escaping (Bool) -> Void) -> ListenerToken {
-        let id = UUID()
-        cameraListeners[id] = listener
-        // Immediately notify current state
-        let currentState = isCameraEnabled()
-        TgoLogger.shared.debug("添加摄像头监听器 - uid: \(uid), 当前状态: \(currentState)")
-        DispatchQueue.main.async {
-            listener(currentState)
-        }
-        return ListenerToken { [weak self] in self?.cameraListeners.removeValue(forKey: id) }
-    }
-    
-    public func addSpeakingListener(_ listener: @escaping (Bool) -> Void) -> ListenerToken {
-        let id = UUID()
-        speakingListeners[id] = listener
-        // Immediately notify current state
-        let currentState = localParticipant?.isSpeaking ?? remoteParticipant?.isSpeaking ?? false
-        DispatchQueue.main.async {
-            listener(currentState)
-        }
-        return ListenerToken { [weak self] in self?.speakingListeners.removeValue(forKey: id) }
-    }
-    
-    public func addCameraPositionListener(_ listener: @escaping (TgoCameraPosition) -> Void) -> ListenerToken {
-        let id = UUID()
-        cameraPositionListeners[id] = listener
-        return ListenerToken { [weak self] in self?.cameraPositionListeners.removeValue(forKey: id) }
-    }
-    
-    public func addConnQualityListener(_ listener: @escaping (TgoConnectionQuality) -> Void) -> ListenerToken {
-        let id = UUID()
-        connectionQualityListeners[id] = listener
-        // Immediately notify current state
-        let lkQuality = localParticipant?.connectionQuality ?? remoteParticipant?.connectionQuality ?? .unknown
-        let currentQuality: TgoConnectionQuality = {
-            switch lkQuality {
-            case .excellent: return .excellent
-            case .good: return .good
-            case .poor: return .poor
-            case .lost: return .lost
-            default: return .unknown
-            }
-        }()
-        DispatchQueue.main.async {
-            listener(currentQuality)
-        }
-        return ListenerToken { [weak self] in self?.connectionQualityListeners.removeValue(forKey: id) }
-    }
-    
-    public func addJoinedListener(_ listener: @escaping () -> Void) -> ListenerToken {
-        let id = UUID()
-        joinedListeners[id] = listener
-        // If already joined, immediately notify
-        let alreadyJoined = isJoined()
-        TgoLogger.shared.debug("添加加入监听器 - uid: \(uid), 已加入: \(alreadyJoined)")
-        if alreadyJoined {
-            DispatchQueue.main.async {
-                listener()
-            }
-        }
-        return ListenerToken { [weak self] in self?.joinedListeners.removeValue(forKey: id) }
-    }
-    
-    public func addLeaveListener(_ listener: @escaping () -> Void) -> ListenerToken {
-        let id = UUID()
-        leaveListeners[id] = listener
-        return ListenerToken { [weak self] in self?.leaveListeners.removeValue(forKey: id) }
-    }
-    
-    public func addTrackPublishedListener(_ listener: @escaping () -> Void) -> ListenerToken {
-        let id = UUID()
-        trackPublishedListeners[id] = listener
-        // If already has published tracks, immediately notify
-        let hasPublishedTracks = (localParticipant?.trackPublications.count ?? 0) > 0 ||
-                                  (remoteParticipant?.trackPublications.count ?? 0) > 0
-        if hasPublishedTracks {
-            DispatchQueue.main.async {
-                listener()
-            }
-        }
-        return ListenerToken { [weak self] in self?.trackPublishedListeners.removeValue(forKey: id) }
-    }
-    
-    public func addTrackUnpublishedListener(_ listener: @escaping () -> Void) -> ListenerToken {
-        let id = UUID()
-        trackUnpublishedListeners[id] = listener
-        return ListenerToken { [weak self] in self?.trackUnpublishedListeners.removeValue(forKey: id) }
-    }
-    
-    public func addVideoInfoListener(_ listener: @escaping TgoVideoInfoListener) -> ListenerToken {
-        let id = UUID()
-        videoInfoListeners[id] = listener
-        if currentVideoInfo.isValid {
-            listener(currentVideoInfo)
-        }
-        return ListenerToken { [weak self] in self?.videoInfoListeners.removeValue(forKey: id) }
-    }
-    
-    // MARK: - RoomDelegate 调用的通知方法
-    // 这些方法由 RoomManager 调用，用于处理在 ParticipantDelegate 设置之前触发的事件
-    
-    /// 远程轨道订阅通知（由 RoomDelegate 调用）
-    public func notifyRemoteTrackSubscribed(source: Track.Source, muted: Bool) {
-        guard !isDisposed else { return }
-        let sourceName = source == Track.Source.microphone ? "麦克风" : (source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("通知远程轨道订阅 - uid: \(uid), source: \(sourceName), enabled: \(!muted)")
-        
-        notifyTrackState(source: source, enabled: !muted)
-        notifyTrackPublished()
-    }
-    
-    /// 远程轨道取消订阅通知（由 RoomDelegate 调用）
-    public func notifyRemoteTrackUnsubscribed(source: Track.Source) {
-        guard !isDisposed else { return }
-        let sourceName = source == Track.Source.microphone ? "麦克风" : (source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("通知远程轨道取消订阅 - uid: \(uid), source: \(sourceName)")
-        
-        notifyTrackState(source: source, enabled: false)
-        notifyTrackUnpublished()
-    }
-    
-    /// 轨道 mute 状态变化通知（由 RoomDelegate 调用）
-    public func notifyTrackMuteChanged(source: Track.Source, muted: Bool) {
-        guard !isDisposed else { return }
-        let sourceName = source == Track.Source.microphone ? "麦克风" : (source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("通知轨道 mute 变化 - uid: \(uid), source: \(sourceName), enabled: \(!muted)")
-        
-        notifyTrackState(source: source, enabled: !muted)
-    }
-    
-    private func initListener() {
+    private func updateState() {
         if let local = localParticipant {
-            TgoLogger.shared.debug("添加本地用户 delegate - uid: \(uid)")
-            local.add(delegate: self)
-        }
-        if let remote = remoteParticipant {
-            TgoLogger.shared.debug("添加远程用户 delegate - uid: \(uid)")
-            remote.add(delegate: self)
-        }
-    }
-    
-    public func notifyTimeout() {
-        guard !isDisposed else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.isDisposed else { return }
-            for listener in self.timeoutListeners.values { listener() }
+            isMicrophoneOn = local.isMicrophoneEnabled()
+            isCameraOn = local.isCameraEnabled()
+            isSpeaking = local.isSpeaking
+            audioLevel = Float(local.audioLevel)
+        } else if let remote = remoteParticipant {
+            isMicrophoneOn = remote.trackPublications.values.contains { $0.source == .microphone && !$0.isMuted }
+            isCameraOn = remote.trackPublications.values.contains { $0.source == .camera && !$0.isMuted }
+            isSpeaking = remote.isSpeaking
+            audioLevel = Float(remote.audioLevel)
         }
     }
     
-    public func notifyJoined() {
-        guard !isDisposed else { return }
-        TgoLogger.shared.info("通知用户加入事件 - uid: \(uid), isLocal: \(isLocal())")
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.isDisposed else { return }
-            for listener in self.joinedListeners.values { listener() }
-        }
-    }
-    
-    public func notifyLeave() {
-        TgoLogger.shared.info("用户离开房间 - uid: \(uid), isLocal: \(isLocal())")
-        // 必须先复制为数组，因为 dispose() 会清空 leaveListeners
-        let listeners = Array(leaveListeners.values)
-        TgoLogger.shared.debug("通知离开事件 - uid: \(uid), 监听器数量: \(listeners.count)")
-        
-        // 先通知，再 dispose
-        DispatchQueue.main.async { [weak self] in
-            for listener in listeners { 
-                listener() 
-            }
-            // dispose 放在通知之后
-            self?.dispose()
-        }
-    }
-    
-    private func notifyInitialState() {
-        guard !isDisposed else { return }
-        let micEnabled = isMicrophoneEnabled()
-        let camEnabled = isCameraEnabled()
-        let speaking = localParticipant?.isSpeaking ?? remoteParticipant?.isSpeaking ?? false
-        
-        let listenerCount = microphoneListeners.count + cameraListeners.count + speakingListeners.count
-        TgoLogger.shared.debug("notifyInitialState - uid: \(uid), mic: \(micEnabled), camera: \(camEnabled), speaking: \(speaking), 监听器数量: \(listenerCount)")
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.isDisposed else { return }
-            for listener in self.microphoneListeners.values { listener(micEnabled) }
-            for listener in self.cameraListeners.values { listener(camEnabled) }
-            for listener in self.speakingListeners.values { listener(speaking) }
-        }
-    }
-    
-    private func notifyVideoInfoChanged(_ info: VideoInfo) {
-        guard !isDisposed else { return }
-        guard currentVideoInfo != info else { return }
-        self.currentVideoInfo = info
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.isDisposed else { return }
-            for listener in self.videoInfoListeners.values { listener(info) }
-        }
-    }
+    // MARK: - Dispose
     
     public func dispose() {
-        lock.lock()
-        defer { lock.unlock() }
-        
-        TgoLogger.shared.debug("释放 TgoParticipant 资源 - uid: \(uid)")
+        guard !isDisposed else { return }
         isDisposed = true
         
-        // Remove delegates to prevent callbacks after disposal
+        audioLevelTimer?.invalidate()
+        audioLevelTimer = nil
+        
         localParticipant?.remove(delegate: self)
         remoteParticipant?.remove(delegate: self)
         
-        timeoutListeners.removeAll()
-        microphoneListeners.removeAll()
-        cameraListeners.removeAll()
-        screenShareListeners.removeAll()
-        speakerListeners.removeAll()
-        speakingListeners.removeAll()
-        cameraPositionListeners.removeAll()
-        connectionQualityListeners.removeAll()
-        joinedListeners.removeAll()
-        leaveListeners.removeAll()
-        trackPublishedListeners.removeAll()
-        trackUnpublishedListeners.removeAll()
-        videoInfoListeners.removeAll()
+        cancellables.removeAll()
         
         localParticipant = nil
         remoteParticipant = nil
@@ -513,109 +201,107 @@ public final class TgoParticipant: NSObject, ObservableObject {
 // MARK: - ParticipantDelegate
 extension TgoParticipant: ParticipantDelegate {
     
-    // MARK: 连接质量
-    public func participant(_ participant: Participant, didUpdateConnectionQuality quality: ConnectionQuality) {
-        guard !isDisposed else { return }
-        let tgoQuality: TgoConnectionQuality = {
-            switch quality {
-            case .excellent: return .excellent
-            case .good: return .good
-            case .poor: return .poor
-            case .lost: return .lost
-            default: return .unknown
-            }
-        }()
-        TgoLogger.shared.debug("连接质量更新 - uid: \(uid), quality: \(tgoQuality)")
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.isDisposed else { return }
-            for listener in self.connectionQualityListeners.values { listener(tgoQuality) }
-        }
-    }
-    
-    // MARK: 说话状态
-    public func participant(_ participant: Participant, didUpdateIsSpeaking isSpeaking: Bool) {
-        guard !isDisposed else { return }
-        TgoLogger.shared.debug("说话状态更新 - uid: \(uid), isSpeaking: \(isSpeaking)")
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.isDisposed else { return }
-            for listener in self.speakingListeners.values { listener(isSpeaking) }
-        }
-    }
-    
-    // MARK: 轨道 Mute 状态变化（核心回调）
     public func participant(_ participant: Participant, trackPublication: TrackPublication, didUpdateIsMuted isMuted: Bool) {
         guard !isDisposed else { return }
-        let sourceName = trackPublication.source == Track.Source.microphone ? "麦克风" : (trackPublication.source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("轨道 mute 状态变化 - uid: \(uid), source: \(sourceName), isMuted: \(isMuted)")
+        let enabled = !isMuted
         
-        notifyTrackState(source: trackPublication.source, enabled: !isMuted)
-    }
-    
-    // MARK: 订阅远程轨道（远程用户）
-    public func participant(_ participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
-        guard !isDisposed else { return }
-        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("订阅远程轨道 (ParticipantDelegate) - uid: \(uid), source: \(sourceName), muted: \(publication.isMuted)")
-        
-        notifyTrackState(source: publication.source, enabled: !publication.isMuted)
-        notifyTrackPublished()
-    }
-    
-    // MARK: 取消订阅远程轨道（远程用户）
-    public func participant(_ participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication) {
-        guard !isDisposed else { return }
-        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("取消订阅远程轨道 (ParticipantDelegate) - uid: \(uid), source: \(sourceName)")
-        
-        notifyTrackState(source: publication.source, enabled: false)
-        notifyTrackUnpublished()
-    }
-    
-    // MARK: 发布轨道（本地用户）
-    public func participant(_ participant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
-        guard !isDisposed else { return }
-        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("发布本地轨道 - uid: \(uid), source: \(sourceName)")
-        
-        notifyTrackState(source: publication.source, enabled: true)
-        notifyTrackPublished()
-    }
-    
-    // MARK: 取消发布轨道（本地用户）
-    public func participant(_ participant: LocalParticipant, didUnpublishTrack publication: LocalTrackPublication) {
-        guard !isDisposed else { return }
-        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
-        TgoLogger.shared.info("取消发布本地轨道 - uid: \(uid), source: \(sourceName)")
-        
-        notifyTrackState(source: publication.source, enabled: false)
-        notifyTrackUnpublished()
-    }
-    
-    // MARK: - 私有通知方法
-    
-    private func notifyTrackState(source: Track.Source, enabled: Bool) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.isDisposed else { return }
-            
-            if source == Track.Source.microphone {
-                for listener in self.microphoneListeners.values { listener(enabled) }
-            } else if source == Track.Source.camera {
-                for listener in self.cameraListeners.values { listener(enabled) }
+        DispatchQueue.main.async {
+            switch trackPublication.source {
+            case .microphone:
+                self.isMicrophoneOn = enabled
+            case .camera:
+                self.isCameraOn = enabled
+            default:
+                break
             }
         }
     }
     
-    private func notifyTrackPublished() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.isDisposed else { return }
-            for listener in self.trackPublishedListeners.values { listener() }
+    public func participant(_ participant: Participant, didUpdateIsSpeaking speaking: Bool) {
+        guard !isDisposed else { return }
+        DispatchQueue.main.async {
+            self.isSpeaking = speaking
+            self.audioLevel = Float(participant.audioLevel)
         }
     }
     
-    private func notifyTrackUnpublished() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.isDisposed else { return }
-            for listener in self.trackUnpublishedListeners.values { listener() }
+    public func participant(_ participant: Participant, didUpdateConnectionQuality quality: ConnectionQuality) {
+        guard !isDisposed else { return }
+        DispatchQueue.main.async {
+            self.connectionQuality = TgoConnectionQuality(from: quality)
+        }
+    }
+    
+    public func participant(_ participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
+        guard !isDisposed else { return }
+        DispatchQueue.main.async {
+            switch publication.source {
+            case .microphone:
+                self.isMicrophoneOn = !publication.isMuted
+            case .camera:
+                self.isCameraOn = !publication.isMuted
+            default:
+                break
+            }
+            self.onTrackPublished.send()
+        }
+    }
+    
+    public func participant(_ participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication) {
+        guard !isDisposed else { return }
+        DispatchQueue.main.async {
+            switch publication.source {
+            case .microphone:
+                self.isMicrophoneOn = false
+            case .camera:
+                self.isCameraOn = false
+            default:
+                break
+            }
+            self.onTrackUnpublished.send()
+        }
+    }
+    
+    public func participant(_ participant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
+        guard !isDisposed else { return }
+        DispatchQueue.main.async {
+            switch publication.source {
+            case .microphone:
+                self.isMicrophoneOn = true
+            case .camera:
+                self.isCameraOn = true
+            default:
+                break
+            }
+            self.onTrackPublished.send()
+        }
+    }
+    
+    public func participant(_ participant: LocalParticipant, didUnpublishTrack publication: LocalTrackPublication) {
+        guard !isDisposed else { return }
+        DispatchQueue.main.async {
+            switch publication.source {
+            case .microphone:
+                self.isMicrophoneOn = false
+            case .camera:
+                self.isCameraOn = false
+            default:
+                break
+            }
+            self.onTrackUnpublished.send()
+        }
+    }
+}
+
+// MARK: - TgoConnectionQuality Extension
+extension TgoConnectionQuality {
+    init(from quality: ConnectionQuality) {
+        switch quality {
+        case .excellent: self = .excellent
+        case .good: self = .good
+        case .poor: self = .poor
+        case .lost: self = .lost
+        default: self = .unknown
         }
     }
 }

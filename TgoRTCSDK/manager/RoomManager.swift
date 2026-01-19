@@ -159,18 +159,18 @@ public final class RoomManager: NSObject {
         let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
         
         for participant in participants {
-            if participant.isLocal() { continue }
+            if participant.isLocal { continue }
             
-            if participant.isJoined() {
+            if participant.hasJoined {
                 if participant.isTimeout {
-                    participant.setTimeout(false)
+                    participant.markTimeout(false)
                 }
                 continue
             }
             
             let elapsed = Int(now.timeIntervalSince(participant.createdAt))
             if elapsed >= timeoutSeconds && !participant.isTimeout {
-                participant.setTimeout(true)
+                participant.markTimeout(true)
                 TgoLogger.shared.info("参与者 \(participant.uid) 超时未加入")
             }
         }
@@ -178,87 +178,32 @@ public final class RoomManager: NSObject {
 }
 
 extension RoomManager: RoomDelegate {
+    
     public func room(_ room: Room, didUpdateConnectionState state: ConnectionState, from oldState: ConnectionState) {
         guard let roomName = currentRoomInfo?.roomName else { return }
         
-        TgoLogger.shared.info("房间连接状态变化 - roomName: \(roomName), \(oldState) -> \(state)")
-        
-        if case .connecting = state {
+        switch state {
+        case .connecting:
             notifyConnectionStatusChanged(roomName: roomName, status: .connecting)
-        } else if case .connected = state {
-            TgoLogger.shared.info("本地用户已连接到房间 - roomName: \(roomName)")
+        case .connected:
             notifyConnectionStatusChanged(roomName: roomName, status: .connected)
-            ParticipantManager.shared.getLocalParticipant()?.setLocalParticipant(participant: room.localParticipant)
-            ParticipantManager.shared.getLocalParticipant()?.notifyJoined()
-        } else if case .disconnected = state {
-            TgoLogger.shared.info("本地用户已断开连接 - roomName: \(roomName)")
+            ParticipantManager.shared.getLocalParticipant()?.setLocalParticipant(room.localParticipant)
+        case .disconnected:
             notifyConnectionStatusChanged(roomName: roomName, status: .disconnected)
             ParticipantManager.shared.getLocalParticipant()?.notifyLeave()
-        } else if case .reconnecting = state {
-            TgoLogger.shared.warning("正在重新连接 - roomName: \(roomName)")
+        case .reconnecting:
             notifyConnectionStatusChanged(roomName: roomName, status: .connecting)
         }
     }
     
     public func room(_ room: Room, participantDidConnect participant: RemoteParticipant) {
-        let identity = participant.identity?.stringValue ?? "unknown"
-        TgoLogger.shared.info("远程用户连接 - uid: \(identity)")
         ParticipantManager.shared.setParticipantJoin(participant: participant)
     }
     
     public func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
-        let identity = participant.identity?.stringValue ?? "unknown"
-        TgoLogger.shared.info("远程用户断开连接 - uid: \(identity)")
         ParticipantManager.shared.setParticipantLeave(participant: participant)
     }
     
-    // MARK: - 远程轨道订阅事件（必须在 RoomDelegate 中处理）
-    // 原因：轨道订阅事件可能在 TgoParticipant.setRemoteParticipant 之前触发
-    // 此时 ParticipantDelegate 还没设置，会错过事件
-    
-    public func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
-        let identity = participant.identity?.stringValue ?? "unknown"
-        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
-        
-        TgoLogger.shared.info("订阅远程轨道 (RoomDelegate) - uid: \(identity), source: \(sourceName), muted: \(publication.isMuted)")
-        
-        // 通知对应的 TgoParticipant
-        let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
-        if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
-            tgoParticipant.notifyRemoteTrackSubscribed(source: publication.source, muted: publication.isMuted)
-        }
-    }
-    
-    public func room(_ room: Room, participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication) {
-        let identity = participant.identity?.stringValue ?? "unknown"
-        let sourceName = publication.source == Track.Source.microphone ? "麦克风" : (publication.source == Track.Source.camera ? "摄像头" : "其他")
-        
-        TgoLogger.shared.info("取消订阅远程轨道 (RoomDelegate) - uid: \(identity), source: \(sourceName)")
-        
-        // 通知对应的 TgoParticipant
-        let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
-        if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
-            tgoParticipant.notifyRemoteTrackUnsubscribed(source: publication.source)
-        }
-    }
-    
-    // 轨道 mute 状态变化（核心回调）
-    public func room(_ room: Room, participant: Participant, trackPublication: TrackPublication, didUpdateIsMuted isMuted: Bool) {
-        let identity = participant.identity?.stringValue ?? "unknown"
-        let sourceName = trackPublication.source == Track.Source.microphone ? "麦克风" : (trackPublication.source == Track.Source.camera ? "摄像头" : "其他")
-        
-        TgoLogger.shared.info("轨道 mute 状态变化 (RoomDelegate) - uid: \(identity), source: \(sourceName), isMuted: \(isMuted)")
-        
-        // 通知对应的 TgoParticipant
-        if participant is RemoteParticipant {
-            let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
-            if let tgoParticipant = participants.first(where: { $0.uid == identity }) {
-                tgoParticipant.notifyTrackMuteChanged(source: trackPublication.source, muted: isMuted)
-            }
-        } else {
-            if let localParticipant = ParticipantManager.shared.getLocalParticipant() {
-                localParticipant.notifyTrackMuteChanged(source: trackPublication.source, muted: isMuted)
-            }
-        }
-    }
+    // 轨道事件由 TgoParticipant 的 ParticipantDelegate 自己处理
+    // RoomDelegate 不需要重复处理
 }
