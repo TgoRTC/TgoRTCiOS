@@ -193,6 +193,8 @@ extension RoomManager: RoomDelegate {
             ParticipantManager.shared.getLocalParticipant()?.notifyLeave()
         case .reconnecting:
             notifyConnectionStatusChanged(roomName: roomName, status: .connecting)
+        @unknown default:
+            break
         }
     }
     
