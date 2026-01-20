@@ -50,7 +50,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
     // MARK: - Computed Properties
     
     public var isLocal: Bool {
-        localParticipant != nil
+        localParticipant != nil || uid == TgoRTC.shared.roomManager.currentRoomInfo?.loginUID
     }
     
     // MARK: - Init

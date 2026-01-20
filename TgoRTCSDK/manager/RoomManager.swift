@@ -108,6 +108,9 @@ public final class RoomManager: NSObject {
             ))
             TgoLogger.shared.info("成功连接到房间 - roomName: \(roomInfo.roomName)")
             
+            // 初始化 uidList 中的待加入参与者
+            ParticipantManager.shared.initializePendingParticipants()
+            
             // Initial track setup
             if micEnabled {
                 TgoLogger.shared.debug("初始化麦克风...")

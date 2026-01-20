@@ -53,28 +53,21 @@ public final class ParticipantManager {
         }
         
         let lkParticipants = TgoRTC.shared.roomManager.room?.remoteParticipants ?? [:]
-        let uidList = roomInfo.uidList
         let loginUID = roomInfo.loginUID
         
         var list: [TgoParticipant] = []
-        var addedUids = Set<String>()
+        var processedUids = Set<String>()
         
-        // 1. Process uidList from roomInfo
-        for uid in uidList {
+        // 1. 返回已缓存的远程参与者（不创建新的，避免重置 createdAt）
+        for (uid, tgoParticipant) in remoteParticipants {
             if uid == loginUID { continue }
             
-            let lkParticipant = lkParticipants.values.first { $0.identity?.stringValue == uid }
-            
-            let tgoParticipant: TgoParticipant
-            if let existing = remoteParticipants[uid] {
-                tgoParticipant = existing
-            } else {
-                tgoParticipant = TgoParticipant(uid: uid, localParticipant: nil, remoteParticipant: lkParticipant)
-                remoteParticipants[uid] = tgoParticipant
-            }
-            
-            if let lkParticipant = lkParticipant {
-                tgoParticipant.setRemoteParticipant(lkParticipant)
+            // 检查是否有对应的 LiveKit 参与者
+            if let lkParticipant = lkParticipants.values.first(where: { $0.identity?.stringValue == uid }) {
+                // 如果还没设置 remoteParticipant，设置它
+                if tgoParticipant.remoteParticipant == nil {
+                    tgoParticipant.setRemoteParticipant(lkParticipant)
+                }
                 if tgoParticipant.isTimeout {
                     tgoParticipant.markTimeout(false)
                 }
@@ -83,30 +76,38 @@ public final class ParticipantManager {
             if includeTimeout || !tgoParticipant.isTimeout {
                 list.append(tgoParticipant)
             }
-            addedUids.insert(uid)
+            processedUids.insert(uid)
         }
         
-        // 2. Add other participants from LiveKit not in uidList
+        // 2. 添加 LiveKit 中存在但未缓存的参与者（新加入的）
         for lkParticipant in lkParticipants.values {
             guard let identity = lkParticipant.identity?.stringValue else { continue }
-            if addedUids.contains(identity) { continue }
+            if identity == loginUID { continue }
+            if processedUids.contains(identity) { continue }
             
-            let tgoParticipant: TgoParticipant
-            if let existing = remoteParticipants[identity] {
-                tgoParticipant = existing
-            } else {
-                tgoParticipant = TgoParticipant(uid: identity, localParticipant: nil, remoteParticipant: lkParticipant)
-                remoteParticipants[identity] = tgoParticipant
-            }
-            
-            tgoParticipant.setRemoteParticipant(lkParticipant)
-            if tgoParticipant.isTimeout {
-                tgoParticipant.markTimeout(false)
-            }
+            // 这是一个新的远程参与者，创建并缓存
+            let tgoParticipant = TgoParticipant(uid: identity, localParticipant: nil, remoteParticipant: lkParticipant)
+            remoteParticipants[identity] = tgoParticipant
             list.append(tgoParticipant)
         }
         
         return list
+    }
+    
+    /// 初始化 uidList 中的待加入参与者（在加入房间后调用）
+    public func initializePendingParticipants() {
+        guard let roomInfo = TgoRTC.shared.roomManager.currentRoomInfo else { return }
+        
+        let loginUID = roomInfo.loginUID
+        for uid in roomInfo.uidList {
+            if uid == loginUID { continue }
+            if remoteParticipants[uid] != nil { continue }
+            
+            // 创建待加入的参与者，此时 createdAt 记录为当前时间
+            let tgoParticipant = TgoParticipant(uid: uid, localParticipant: nil, remoteParticipant: nil)
+            remoteParticipants[uid] = tgoParticipant
+            TgoLogger.shared.debug("初始化待加入参与者 - uid: \(uid)")
+        }
     }
     
     public func inviteParticipant(uids: [String]) {
