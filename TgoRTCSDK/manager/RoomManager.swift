@@ -146,16 +146,21 @@ public final class RoomManager: NSObject {
     }
     
     private func startTimeoutChecker(timeoutSeconds: Int) {
-        timeoutTimer?.invalidate()
-        TgoLogger.shared.info("启动超时检查器 - 超时时间: \(timeoutSeconds)秒")
-        timeoutTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.checkParticipantsTimeout(timeoutSeconds: timeoutSeconds)
+        // 确保在主线程创建 Timer
+        DispatchQueue.main.async { [weak self] in
+            self?.timeoutTimer?.invalidate()
+            TgoLogger.shared.info("启动超时检查器 - 超时时间: \(timeoutSeconds)秒")
+            self?.timeoutTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                self?.checkParticipantsTimeout(timeoutSeconds: timeoutSeconds)
+            }
         }
     }
     
     private func stopTimeoutChecker() {
-        timeoutTimer?.invalidate()
-        timeoutTimer = nil
+        DispatchQueue.main.async { [weak self] in
+            self?.timeoutTimer?.invalidate()
+            self?.timeoutTimer = nil
+        }
     }
     
     private func checkParticipantsTimeout(timeoutSeconds: Int) {
