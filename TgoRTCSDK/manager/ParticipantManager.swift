@@ -146,6 +146,9 @@ public final class ParticipantManager {
             notifyNewParticipant(tgoParticipant)
             TgoRTC.shared.roomManager.currentRoomInfo?.uidList.append(uid)
         }
+        
+        // 重启超时检查器
+        TgoRTC.shared.roomManager.restartTimeoutCheckerIfNeeded()
     }
     
     public func setParticipantJoin(participant: RemoteParticipant) {

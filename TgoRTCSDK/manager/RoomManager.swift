@@ -156,6 +156,12 @@ public final class RoomManager: NSObject {
         }
     }
     
+    /// 重启超时检查器（当有新参与者被邀请时调用）
+    public func restartTimeoutCheckerIfNeeded() {
+        guard let roomInfo = currentRoomInfo, timeoutTimer == nil else { return }
+        startTimeoutChecker(timeoutSeconds: roomInfo.timeout)
+    }
+    
     private func stopTimeoutChecker() {
         DispatchQueue.main.async { [weak self] in
             self?.timeoutTimer?.invalidate()
@@ -167,14 +173,13 @@ public final class RoomManager: NSObject {
         let now = Date()
         let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
         
-        TgoLogger.shared.debug("超时检查 - 参与者数量: \(participants.count), 超时秒数: \(timeoutSeconds)")
+        // 统计待处理的参与者数量
+        var pendingCount = 0
         
         for participant in participants {
-            let elapsed = Int(now.timeIntervalSince(participant.createdAt))
-            TgoLogger.shared.debug("检查参与者 \(participant.uid) - isLocal: \(participant.isLocal), hasJoined: \(participant.hasJoined), elapsed: \(elapsed)s, isTimeout: \(participant.isTimeout)")
-            
             if participant.isLocal { continue }
             
+            // 已加入的参与者，取消超时标记
             if participant.hasJoined {
                 if participant.isTimeout {
                     participant.markTimeout(false)
@@ -182,10 +187,26 @@ public final class RoomManager: NSObject {
                 continue
             }
             
-            if elapsed >= timeoutSeconds && !participant.isTimeout {
-                participant.markTimeout(true)
-                TgoLogger.shared.info("参与者 \(participant.uid) 超时未加入 (elapsed: \(elapsed)s >= timeout: \(timeoutSeconds)s)")
+            // 已超时的参与者，跳过
+            if participant.isTimeout {
+                continue
             }
+            
+            // 待加入的参与者
+            pendingCount += 1
+            
+            let elapsed = Int(now.timeIntervalSince(participant.createdAt))
+            if elapsed >= timeoutSeconds {
+                participant.markTimeout(true)
+                TgoLogger.shared.info("参与者 \(participant.uid) 超时未加入")
+                pendingCount -= 1
+            }
+        }
+        
+        // 如果没有待处理的参与者了，停止计时器
+        if pendingCount == 0 && !participants.isEmpty {
+            TgoLogger.shared.debug("所有参与者已处理完毕，停止超时检查器")
+            stopTimeoutChecker()
         }
     }
 }
