@@ -147,6 +147,7 @@ public final class RoomManager: NSObject {
     
     private func startTimeoutChecker(timeoutSeconds: Int) {
         timeoutTimer?.invalidate()
+        TgoLogger.shared.info("启动超时检查器 - 超时时间: \(timeoutSeconds)秒")
         timeoutTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.checkParticipantsTimeout(timeoutSeconds: timeoutSeconds)
         }
@@ -161,7 +162,12 @@ public final class RoomManager: NSObject {
         let now = Date()
         let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
         
+        TgoLogger.shared.debug("超时检查 - 参与者数量: \(participants.count), 超时秒数: \(timeoutSeconds)")
+        
         for participant in participants {
+            let elapsed = Int(now.timeIntervalSince(participant.createdAt))
+            TgoLogger.shared.debug("检查参与者 \(participant.uid) - isLocal: \(participant.isLocal), hasJoined: \(participant.hasJoined), elapsed: \(elapsed)s, isTimeout: \(participant.isTimeout)")
+            
             if participant.isLocal { continue }
             
             if participant.hasJoined {
@@ -171,10 +177,9 @@ public final class RoomManager: NSObject {
                 continue
             }
             
-            let elapsed = Int(now.timeIntervalSince(participant.createdAt))
             if elapsed >= timeoutSeconds && !participant.isTimeout {
                 participant.markTimeout(true)
-                TgoLogger.shared.info("参与者 \(participant.uid) 超时未加入")
+                TgoLogger.shared.info("参与者 \(participant.uid) 超时未加入 (elapsed: \(elapsed)s >= timeout: \(timeoutSeconds)s)")
             }
         }
     }
