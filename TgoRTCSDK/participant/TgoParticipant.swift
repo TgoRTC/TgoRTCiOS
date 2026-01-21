@@ -107,6 +107,10 @@ public final class TgoParticipant: NSObject, ObservableObject {
         onLeave.send()
         dispose()
     }
+
+    public func setSpeakerphoneOn(_ enabled: Bool) async {
+        await TgoRTC.shared.audioManager.setSpeakerphoneOn(enabled)
+    }
     
     // MARK: - Control Methods (Local only)
     
