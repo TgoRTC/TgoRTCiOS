@@ -180,7 +180,7 @@ public final class RoomManager: NSObject {
             if participant.isLocal { continue }
             
             // 已加入的参与者，取消超时标记
-            if participant.hasJoined {
+            if participant.isJoined {
                 if participant.isTimeout {
                     participant.markTimeout(false)
                 }

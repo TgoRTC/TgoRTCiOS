@@ -27,7 +27,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
     @Published public private(set) var connectionQuality: TgoConnectionQuality = .unknown
     @Published public private(set) var cameraPosition: TgoCameraPosition = .front
     @Published public private(set) var isTimeout: Bool = false
-    @Published public private(set) var hasJoined: Bool = false
+    @Published public private(set) var isJoined: Bool = false
     @Published public private(set) var videoInfo: VideoInfo = .empty
     
     // MARK: - Event Publishers (一次性事件)
@@ -78,7 +78,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
         setupDelegate()
         updateState()
         
-        hasJoined = true
+        isJoined = true
         onJoined.send()
     }
     
@@ -87,7 +87,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
         setupDelegate()
         updateState()
         
-        hasJoined = true
+        isJoined = true
         onJoined.send()
         
         if !participant.trackPublications.isEmpty {
