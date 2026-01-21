@@ -33,12 +33,25 @@ public final class AudioManager {
         do {
             let session = AVAudioSession.sharedInstance()
             if on {
+                // 使用扬声器：设置 category 包含 defaultToSpeaker，并覆盖输出端口
+                try session.setCategory(
+                    .playAndRecord,
+                    mode: .voiceChat,
+                    options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
+                )
                 try session.overrideOutputAudioPort(.speaker)
             } else {
+                // 使用听筒：重新设置 category 不包含 defaultToSpeaker
+                try session.setCategory(
+                    .playAndRecord,
+                    mode: .voiceChat,
+                    options: [.allowBluetooth, .allowBluetoothA2DP]
+                )
                 try session.overrideOutputAudioPort(.none)
             }
+            try session.setActive(true)
             self.isSpeakerOn = on
-            TgoLogger.shared.debug("扬声器状态设置成功 - enabled: \(on)")
+            TgoLogger.shared.debug("扬声器状态设置成功 - enabled: \(on), category options: \(session.categoryOptions)")
         } catch {
             TgoLogger.shared.error("设置扬声器失败: \(error.localizedDescription)")
         }
