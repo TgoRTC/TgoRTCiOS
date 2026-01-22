@@ -1,0 +1,29 @@
+{
+  "name": "TgoRTCSDK",
+  "version": "1.0.0",
+  "summary": "TgoRTC SDK for iOS - Real-time Communication SDK",
+  "description": "TgoRTCSDK 是一个基于 LiveKit 封装的实时音视频通信 SDK，\n提供简单易用的 API 用于房间管理、参与者管理和音频控制。",
+  "homepage": "https://github.com/your-org/TgoRTCIOS",
+  "license": {
+    "type": "MIT",
+    "file": "LICENSE"
+  },
+  "authors": {
+    "Your Name": "your.email@example.com"
+  },
+  "platforms": {
+    "ios": "14.0"
+  },
+  "swift_versions": "5.9",
+  "source": {
+    "git": "https://github.com/your-org/TgoRTCIOS.git",
+    "tag": "1.0.0"
+  },
+  "source_files": "TgoRTCSDK/**/*.swift",
+  "dependencies": {
+    "LiveKit": [
+      "~> 2.11"
+    ]
+  },
+  "swift_version": "5.9"
+}
