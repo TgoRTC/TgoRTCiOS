@@ -192,25 +192,17 @@ public final class RoomManager: NSObject {
     
     private func checkParticipantsTimeout(timeoutSeconds: Int) {
         let now = Date()
-        let participants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: true)
+        let participants = ParticipantManager.shared.getRemoteParticipants()
         
-        // 统计待处理的参与者数量
+        // 收集超时的参与者 uid
+        var timeoutUids: [String] = []
         var pendingCount = 0
         
         for participant in participants {
             if participant.isLocal { continue }
             
-            // 已加入的参与者，取消超时标记
+            // 已加入的参与者，跳过
             if participant.isJoined {
-                if participant.isTimeout {
-                    TgoLogger.shared.debug("参与者 \(participant.uid) 已加入，取消超时标记")
-                    participant.markTimeout(false)
-                }
-                continue
-            }
-            
-            // 已超时的参与者，跳过
-            if participant.isTimeout {
                 continue
             }
             
@@ -220,9 +212,14 @@ public final class RoomManager: NSObject {
             let elapsed = Int(now.timeIntervalSince(participant.createdAt))
             if elapsed >= timeoutSeconds {
                 TgoLogger.shared.info("参与者 \(participant.uid) 超时未加入 (已等待 \(elapsed)秒, 阈值 \(timeoutSeconds)秒)")
-                participant.markTimeout(true)
+                timeoutUids.append(participant.uid)
                 pendingCount -= 1
             }
+        }
+        
+        // 移除超时的参与者
+        if !timeoutUids.isEmpty, let roomName = currentRoomInfo?.roomName {
+            ParticipantManager.shared.missedParticipants(roomName: roomName, uids: timeoutUids)
         }
         
         // 如果没有待处理的参与者了，停止计时器

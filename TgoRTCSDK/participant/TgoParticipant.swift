@@ -9,6 +9,12 @@ import LiveKit
 import Combine
 import AVFoundation
 
+/// 参与者离开的原因
+public enum TgoLeaveReason {
+    case normal   // 正常离开
+    case timeout  // 超时未加入
+}
+
 /// Represents a participant in a room (local or remote).
 /// 使用 Combine 的 @Published 属性来通知状态变化，符合 SwiftUI 的数据流模式
 public final class TgoParticipant: NSObject, ObservableObject {
@@ -26,15 +32,13 @@ public final class TgoParticipant: NSObject, ObservableObject {
     @Published public private(set) var audioLevel: Float = 0
     @Published public private(set) var connectionQuality: TgoConnectionQuality = .unknown
     @Published public private(set) var cameraPosition: TgoCameraPosition = .front
-    @Published public private(set) var isTimeout: Bool = false
     @Published public private(set) var isJoined: Bool = false
     @Published public private(set) var videoInfo: VideoInfo = .empty
     
     // MARK: - Event Publishers (一次性事件)
     
     public let onJoined = PassthroughSubject<Void, Never>()
-    public let onLeave = PassthroughSubject<Void, Never>()
-    public let onTimeout = PassthroughSubject<Void, Never>()
+    public let onLeave = PassthroughSubject<TgoLeaveReason, Never>()
     public let onTrackPublished = PassthroughSubject<Void, Never>()
     public let onTrackUnpublished = PassthroughSubject<Void, Never>()
     
@@ -95,16 +99,9 @@ public final class TgoParticipant: NSObject, ObservableObject {
         }
     }
     
-    public func markTimeout(_ value: Bool) {
-        isTimeout = value
-        if value {
-            onTimeout.send()
-        }
-    }
-    
-    public func notifyLeave() {
+    public func notifyLeave(reason: TgoLeaveReason = .normal) {
         guard !isDisposed else { return }
-        onLeave.send()
+        onLeave.send(reason)
         dispose()
     }
 

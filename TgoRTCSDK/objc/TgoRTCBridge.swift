@@ -49,14 +49,14 @@ public class TgoRTCBridge: NSObject {
     }
     
     /// Get all participants in the room
-    public func getAllParticipants(includeTimeout: Bool = false) -> [TgoParticipantBridge] {
-        let swiftParticipants = ParticipantManager.shared.getAllParticipants(includeTimeout: includeTimeout)
+    public func getAllParticipants() -> [TgoParticipantBridge] {
+        let swiftParticipants = ParticipantManager.shared.getAllParticipants()
         return swiftParticipants.map { getOrCreateBridge(for: $0) }
     }
     
     /// Get remote participants in the room
-    public func getRemoteParticipants(includeTimeout: Bool = false) -> [TgoParticipantBridge] {
-        let swiftParticipants = ParticipantManager.shared.getRemoteParticipants(includeTimeout: includeTimeout)
+    public func getRemoteParticipants() -> [TgoParticipantBridge] {
+        let swiftParticipants = ParticipantManager.shared.getRemoteParticipants()
         return swiftParticipants.map { getOrCreateBridge(for: $0) }
     }
     

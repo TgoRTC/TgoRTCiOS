@@ -34,3 +34,9 @@ import Foundation
     case poor = 3
     case lost = 4
 }
+
+/// Objective-C compatible leave reason
+@objc public enum TgoLeaveReasonObjC: Int {
+    case normal = 0   // 正常离开
+    case timeout = 1  // 超时未加入
+}

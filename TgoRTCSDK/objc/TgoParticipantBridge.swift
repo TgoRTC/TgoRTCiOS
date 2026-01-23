@@ -17,8 +17,7 @@ import Combine
     @objc optional func participant(_ participant: TgoParticipantBridge, didUpdateConnectionQuality quality: TgoConnectionQualityObjC)
     @objc optional func participant(_ participant: TgoParticipantBridge, didUpdateVideoInfo info: TgoVideoInfoObjC)
     @objc optional func participantDidJoin(_ participant: TgoParticipantBridge)
-    @objc optional func participantDidLeave(_ participant: TgoParticipantBridge)
-    @objc optional func participantDidTimeout(_ participant: TgoParticipantBridge)
+    @objc optional func participant(_ participant: TgoParticipantBridge, didLeaveWithReason reason: TgoLeaveReasonObjC)
 }
 
 /// Objective-C compatible bridge for participant information and control
@@ -36,7 +35,6 @@ public class TgoParticipantBridge: NSObject {
     public var isSpeaking: Bool { swiftParticipant.isSpeaking }
     public var audioLevel: Float { swiftParticipant.audioLevel }
     public var isJoined: Bool { swiftParticipant.isJoined }
-    public var isTimeout: Bool { swiftParticipant.isTimeout }
     
     public var connectionQuality: TgoConnectionQualityObjC {
         switch swiftParticipant.connectionQuality {
@@ -131,17 +129,10 @@ public class TgoParticipantBridge: NSObject {
             
         swiftParticipant.onLeave
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
+            .sink { [weak self] reason in
                 guard let self = self else { return }
-                self.delegate?.participantDidLeave?(self)
-            }
-            .store(in: &cancellables)
-            
-        swiftParticipant.onTimeout
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self = self else { return }
-                self.delegate?.participantDidTimeout?(self)
+                let objcReason: TgoLeaveReasonObjC = (reason == .timeout) ? .timeout : .normal
+                self.delegate?.participant?(self, didLeaveWithReason: objcReason)
             }
             .store(in: &cancellables)
     }

@@ -34,22 +34,22 @@ public final class ParticipantManager {
         return localParticipant
     }
     
-    public func getAllParticipants(includeTimeout: Bool = false) -> [TgoParticipant] {
+    public func getAllParticipants() -> [TgoParticipant] {
         var list: [TgoParticipant] = []
         if let local = getLocalParticipant() {
             list.append(local)
         }
         
-        let remote = getRemoteParticipants(includeTimeout: includeTimeout)
+        let remote = getRemoteParticipants()
         let filteredRemote = remote.filter { $0.uid != localParticipant?.uid }
         list.append(contentsOf: filteredRemote)
         
-        TgoLogger.shared.debug("getAllParticipants(includeTimeout: \(includeTimeout)) -> 返回 \(list.count) 个参与者: \(list.map { "\($0.uid)(timeout:\($0.isTimeout))" }.joined(separator: ", "))")
+        TgoLogger.shared.debug("getAllParticipants() -> 返回 \(list.count) 个参与者: \(list.map { $0.uid }.joined(separator: ", "))")
         
         return list
     }
     
-    public func getRemoteParticipants(includeTimeout: Bool = false) -> [TgoParticipant] {
+    public func getRemoteParticipants() -> [TgoParticipant] {
         guard let roomInfo = TgoRTC.shared.roomManager.currentRoomInfo else {
             return []
         }
@@ -70,17 +70,9 @@ public final class ParticipantManager {
                 if tgoParticipant.remoteParticipant == nil {
                     tgoParticipant.setRemoteParticipant(lkParticipant)
                 }
-                if tgoParticipant.isTimeout {
-                    TgoLogger.shared.debug("参与者 \(uid) 已在 LiveKit 中，清除超时状态")
-                    tgoParticipant.markTimeout(false)
-                }
             }
             
-            if includeTimeout || !tgoParticipant.isTimeout {
-                list.append(tgoParticipant)
-            } else {
-                TgoLogger.shared.debug("参与者 \(uid) 已超时，且 includeTimeout 为 false，跳过")
-            }
+            list.append(tgoParticipant)
             processedUids.insert(uid)
         }
         
@@ -169,26 +161,28 @@ public final class ParticipantManager {
             return
         }
         
-        TgoLogger.shared.info("标记参与者超时 - roomName: \(roomName), uids: \(uids)")
+        TgoLogger.shared.info("移除超时参与者 - roomName: \(roomName), uids: \(uids)")
         
-        var markedCount = 0
+        var removedCount = 0
         for uid in uids {
             guard let tgoParticipant = remoteParticipants[uid] else {
-                TgoLogger.shared.debug("参与者 \(uid) 不存在，跳过超时标记")
+                TgoLogger.shared.debug("参与者 \(uid) 不存在，跳过")
                 continue
             }
             
-            // 只标记尚未加入且未超时的参与者
-            if !tgoParticipant.isJoined && !tgoParticipant.isTimeout {
-                tgoParticipant.markTimeout(true)
-                markedCount += 1
-                TgoLogger.shared.debug("参与者 \(uid) 已标记为超时")
+            // 只移除尚未加入的参与者
+            if !tgoParticipant.isJoined {
+                tgoParticipant.notifyLeave(reason: .timeout)
+                remoteParticipants.removeValue(forKey: uid)
+                currentRoomInfo.uidList.removeAll { $0 == uid }
+                removedCount += 1
+                TgoLogger.shared.debug("参与者 \(uid) 已移除（超时未加入）")
             } else {
-                TgoLogger.shared.debug("参与者 \(uid) 已加入或已超时，跳过 (isJoined: \(tgoParticipant.isJoined), isTimeout: \(tgoParticipant.isTimeout))")
+                TgoLogger.shared.debug("参与者 \(uid) 已加入，跳过移除")
             }
         }
         
-        TgoLogger.shared.info("超时标记完成 - 共标记 \(markedCount) 个参与者")
+        TgoLogger.shared.info("超时移除完成 - 共移除 \(removedCount) 个参与者")
     }
     
     public func inviteParticipant(roomName: String, uids: [String]) {
