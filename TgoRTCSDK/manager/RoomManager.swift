@@ -182,6 +182,7 @@ public final class RoomManager: NSObject {
             // 已加入的参与者，取消超时标记
             if participant.isJoined {
                 if participant.isTimeout {
+                    TgoLogger.shared.debug("参与者 \(participant.uid) 已加入，取消超时标记")
                     participant.markTimeout(false)
                 }
                 continue
@@ -197,8 +198,8 @@ public final class RoomManager: NSObject {
             
             let elapsed = Int(now.timeIntervalSince(participant.createdAt))
             if elapsed >= timeoutSeconds {
+                TgoLogger.shared.info("参与者 \(participant.uid) 超时未加入 (已等待 \(elapsed)秒, 阈值 \(timeoutSeconds)秒)")
                 participant.markTimeout(true)
-                TgoLogger.shared.info("参与者 \(participant.uid) 超时未加入")
                 pendingCount -= 1
             }
         }
