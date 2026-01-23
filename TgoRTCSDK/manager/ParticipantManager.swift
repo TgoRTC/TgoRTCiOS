@@ -158,6 +158,31 @@ public final class ParticipantManager {
             }
         }
     }
+
+    public func missedParticipants(uids: [String]) {
+        guard !uids.isEmpty else { return }
+        
+        TgoLogger.shared.info("标记参与者超时 - uids: \(uids)")
+        
+        var markedCount = 0
+        for uid in uids {
+            guard let tgoParticipant = remoteParticipants[uid] else {
+                TgoLogger.shared.debug("参与者 \(uid) 不存在，跳过超时标记")
+                continue
+            }
+            
+            // 只标记尚未加入且未超时的参与者
+            if !tgoParticipant.isJoined && !tgoParticipant.isTimeout {
+                tgoParticipant.markTimeout(true)
+                markedCount += 1
+                TgoLogger.shared.debug("参与者 \(uid) 已标记为超时")
+            } else {
+                TgoLogger.shared.debug("参与者 \(uid) 已加入或已超时，跳过 (isJoined: \(tgoParticipant.isJoined), isTimeout: \(tgoParticipant.isTimeout))")
+            }
+        }
+        
+        TgoLogger.shared.info("超时标记完成 - 共标记 \(markedCount) 个参与者")
+    }
     
     public func inviteParticipant(uids: [String]) {
         guard let roomInfo = TgoRTC.shared.roomManager.currentRoomInfo else {
