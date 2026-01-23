@@ -191,13 +191,19 @@ public final class ParticipantManager {
         TgoLogger.shared.info("超时标记完成 - 共标记 \(markedCount) 个参与者")
     }
     
-    public func inviteParticipant(uids: [String]) {
+    public func inviteParticipant(roomName: String, uids: [String]) {
         guard let roomInfo = TgoRTC.shared.roomManager.currentRoomInfo else {
             TgoLogger.shared.warning("邀请参与者失败: 当前不在房间中")
             return
         }
         
-        TgoLogger.shared.info("邀请参与者 - uids: \(uids)")
+        // 判断是否是当前通话
+        guard roomInfo.roomName == roomName else {
+            TgoLogger.shared.debug("inviteParticipant: roomName(\(roomName)) 不是当前通话，跳过")
+            return
+        }
+        
+        TgoLogger.shared.info("邀请参与者 - roomName: \(roomName), uids: \(uids)")
         
         let existingUids = Set(remoteParticipants.keys)
         var newUids = uids.filter { !existingUids.contains($0) }

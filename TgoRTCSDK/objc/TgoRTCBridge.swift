@@ -61,8 +61,8 @@ public class TgoRTCBridge: NSObject {
     }
     
     /// Invite participants to the room
-    public func inviteParticipant(uids: [String]) {
-        ParticipantManager.shared.inviteParticipant(uids: uids)
+    public func inviteParticipant(roomName: String, uids: [String]) {
+        ParticipantManager.shared.inviteParticipant(roomName: roomName, uids: uids)
     }
     
     /// Mark participants as missed/timeout
