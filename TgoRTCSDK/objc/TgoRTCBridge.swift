@@ -65,6 +65,11 @@ public class TgoRTCBridge: NSObject {
         ParticipantManager.shared.inviteParticipant(uids: uids)
     }
     
+    /// Mark participants as missed/timeout
+    public func missedParticipants(roomName: String, uids: [String]) {
+        ParticipantManager.shared.missedParticipants(roomName: roomName, uids: uids)
+    }
+    
     // Internal helper to manage bridge instances
     private func getOrCreateBridge(for swiftParticipant: TgoParticipant) -> TgoParticipantBridge {
         if let existing = participantBridges[swiftParticipant.uid] {

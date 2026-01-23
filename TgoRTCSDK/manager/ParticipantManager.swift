@@ -159,10 +159,17 @@ public final class ParticipantManager {
         }
     }
 
-    public func missedParticipants(uids: [String]) {
+    public func missedParticipants(roomName: String, uids: [String]) {
         guard !uids.isEmpty else { return }
         
-        TgoLogger.shared.info("标记参与者超时 - uids: \(uids)")
+        // 判断是否是当前通话
+        guard let currentRoomInfo = TgoRTC.shared.roomManager.currentRoomInfo,
+              currentRoomInfo.roomName == roomName else {
+            TgoLogger.shared.debug("missedParticipants: roomName(\(roomName)) 不是当前通话，跳过")
+            return
+        }
+        
+        TgoLogger.shared.info("标记参与者超时 - roomName: \(roomName), uids: \(uids)")
         
         var markedCount = 0
         for uid in uids {
