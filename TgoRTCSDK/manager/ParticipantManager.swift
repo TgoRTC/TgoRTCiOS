@@ -99,7 +99,8 @@ public final class ParticipantManager {
         return list
     }
     
-    /// 初始化 uidList 中的待加入参与者（在加入房间后调用）
+    /// 初始化 uidList 中的待加入参与者（在加入房间时调用）
+    /// 此方法在 join() 中同步调用，确保 UI 层可以立即获取 pending 状态的参与者
     public func initializePendingParticipants() {
         guard let roomInfo = TgoRTC.shared.roomManager.currentRoomInfo else { return }
         
@@ -112,6 +113,49 @@ public final class ParticipantManager {
             let tgoParticipant = TgoParticipant(uid: uid, localParticipant: nil, remoteParticipant: nil)
             remoteParticipants[uid] = tgoParticipant
             TgoLogger.shared.debug("初始化待加入参与者 - uid: \(uid)")
+        }
+    }
+    
+    /// 同步已在房间中的远程参与者（连接成功后调用）
+    /// 此方法会检查 LiveKit 中已存在的参与者，并更新对应的 TgoParticipant 的 isJoined 状态
+    public func syncExistingRemoteParticipants() {
+        guard let room = TgoRTC.shared.roomManager.room else {
+            TgoLogger.shared.warning("syncExistingRemoteParticipants: room 为空")
+            return
+        }
+        guard let roomInfo = TgoRTC.shared.roomManager.currentRoomInfo else {
+            TgoLogger.shared.warning("syncExistingRemoteParticipants: roomInfo 为空")
+            return
+        }
+        
+        let loginUID = roomInfo.loginUID
+        let lkParticipants = room.remoteParticipants
+        
+        TgoLogger.shared.info("同步已在房间中的远程参与者 - LiveKit 参与者数量: \(lkParticipants.count)")
+        
+        for lkParticipant in lkParticipants.values {
+            guard let identity = lkParticipant.identity?.stringValue else { continue }
+            if identity == loginUID { continue }
+            
+            if let existing = remoteParticipants[identity] {
+                // 已缓存的 pending 参与者，设置 remoteParticipant（触发 isJoined = true）
+                if existing.remoteParticipant == nil {
+                    TgoLogger.shared.debug("同步参与者 \(identity) - 设置 remoteParticipant，isJoined 将变为 true")
+                    existing.setRemoteParticipant(lkParticipant)
+                }
+            } else {
+                // 未知的参与者（不在 uidList 中），创建并通知
+                TgoLogger.shared.info("发现新的远程参与者 - uid: \(identity)")
+                let tgoParticipant = TgoParticipant(uid: identity, localParticipant: nil, remoteParticipant: lkParticipant)
+                remoteParticipants[identity] = tgoParticipant
+                
+                // 添加到 uidList
+                if !roomInfo.uidList.contains(identity) {
+                    roomInfo.uidList.append(identity)
+                }
+                
+                notifyNewParticipant(tgoParticipant)
+            }
         }
     }
     

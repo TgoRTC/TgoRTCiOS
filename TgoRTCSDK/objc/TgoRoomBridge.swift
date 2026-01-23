@@ -47,20 +47,22 @@ public class TgoRoomBridge: NSObject {
         }
     }
     
-    /// Join a room
+    /// Join a room (non-blocking)
+    /// The completion callback is called immediately after initiating the join.
+    /// Use the delegate's room(_:didChangeStatus:) to monitor connection status.
     public func join(roomInfo: TgoRoomInfoObjC,
                     micEnabled: Bool,
                     cameraEnabled: Bool,
                     completion: ((Bool) -> Void)?) {
-        Task {
-            await RoomManager.shared.join(
-                roomInfo: roomInfo.toSwift(),
-                micEnabled: micEnabled,
-                cameraEnabled: cameraEnabled
-            )
-            DispatchQueue.main.async {
-                completion?(true)
-            }
+        // join 是非阻塞方法，调用后立即返回，连接在后台进行
+        RoomManager.shared.join(
+            roomInfo: roomInfo.toSwift(),
+            micEnabled: micEnabled,
+            cameraEnabled: cameraEnabled
+        )
+        // 立即回调，表示加入请求已发起
+        DispatchQueue.main.async {
+            completion?(true)
         }
     }
     

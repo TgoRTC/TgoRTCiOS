@@ -66,10 +66,14 @@ public final class RoomManager: NSObject {
         }
     }
 
+    /// 加入房间（非阻塞版本）
+    /// 调用后立即返回，连接过程在后台进行。
+    /// UI 层可以立即调用 getAllParticipants() 获取参与者列表（pending 状态）。
+    /// 连接状态变化通过 addConnectionStatusListener 监听。
     public func join(roomInfo: RoomInfo,
-              micEnabled: Bool = false,
-              cameraEnabled: Bool = false,
-              screenShareEnabled: Bool = false) async {
+                     micEnabled: Bool = false,
+                     cameraEnabled: Bool = false,
+                     screenShareEnabled: Bool = false) {
         if currentRoomInfo != nil {
             TgoLogger.shared.warning("已在房间中，无法重复加入")
             return
@@ -78,9 +82,29 @@ public final class RoomManager: NSObject {
         TgoLogger.shared.info("开始加入房间 - roomName: \(roomInfo.roomName), loginUID: \(roomInfo.loginUID)")
         TgoLogger.shared.debug("加入配置 - mic: \(micEnabled), camera: \(cameraEnabled), screenShare: \(screenShareEnabled)")
         
+        // 1. 同步设置 roomInfo
         self.currentRoomInfo = roomInfo
+        
+        // 2. 立即初始化待加入参与者（UI 层可立即获取 pending 状态的参与者）
+        ParticipantManager.shared.initializePendingParticipants()
+        
+        // 3. 通知连接中状态
         notifyConnectionStatusChanged(roomName: roomInfo.roomName, status: .connecting)
         
+        // 4. 后台执行连接
+        Task {
+            await connectInternal(roomInfo: roomInfo,
+                                  micEnabled: micEnabled,
+                                  cameraEnabled: cameraEnabled,
+                                  screenShareEnabled: screenShareEnabled)
+        }
+    }
+    
+    /// 内部异步连接方法
+    private func connectInternal(roomInfo: RoomInfo,
+                                 micEnabled: Bool,
+                                 cameraEnabled: Bool,
+                                 screenShareEnabled: Bool) async {
         let roomOptions = RoomOptions(
             defaultCameraCaptureOptions: CameraCaptureOptions(
                 position: .front,
@@ -107,9 +131,6 @@ public final class RoomManager: NSObject {
                 autoSubscribe: true
             ))
             TgoLogger.shared.info("成功连接到房间 - roomName: \(roomInfo.roomName)")
-            
-            // 初始化 uidList 中的待加入参与者
-            ParticipantManager.shared.initializePendingParticipants()
             
             // Initial track setup
             if micEnabled {
@@ -223,6 +244,8 @@ extension RoomManager: RoomDelegate {
         case .connected:
             notifyConnectionStatusChanged(roomName: roomName, status: .connected)
             ParticipantManager.shared.getLocalParticipant()?.setLocalParticipant(room.localParticipant)
+            // 同步已在房间中的远程参与者（触发 isJoined 状态更新）
+            ParticipantManager.shared.syncExistingRemoteParticipants()
         case .disconnected:
             notifyConnectionStatusChanged(roomName: roomName, status: .disconnected)
             ParticipantManager.shared.getLocalParticipant()?.notifyLeave()

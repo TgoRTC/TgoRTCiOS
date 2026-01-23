@@ -53,14 +53,18 @@ let roomInfo = RoomInfo(
     rtcType: .video
 )
 
-await RoomManager.shared.join(
+// join 是非阻塞方法，调用后立即返回
+RoomManager.shared.join(
     roomInfo: roomInfo,
     micEnabled: true,
     cameraEnabled: true
 )
 
+// 立即获取参与者列表（包含 pending 状态的参与者）
+let participants = TgoRTC.shared.participantManager.getAllParticipants()
+
 // 获取本地参与者
-let localParticipant = TgoRTC.shared.participantManager.localParticipant
+let localParticipant = TgoRTC.shared.participantManager.getLocalParticipant()
 
 // 控制麦克风/摄像头
 await localParticipant?.setMicrophoneEnabled(false)

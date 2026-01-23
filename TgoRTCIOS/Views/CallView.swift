@@ -246,13 +246,12 @@ struct CallView: View {
             }
         }
         
-        Task {
-            await TgoRTC.shared.roomManager.join(
-                roomInfo: roomInfo,
-                micEnabled: true,
-                cameraEnabled: true
-            )
-        }
+        // join 是非阻塞方法，调用后立即返回，连接在后台进行
+        TgoRTC.shared.roomManager.join(
+            roomInfo: roomInfo,
+            micEnabled: true,
+            cameraEnabled: true
+        )
     }
     
     private func subscribeToLocalParticipant() {
