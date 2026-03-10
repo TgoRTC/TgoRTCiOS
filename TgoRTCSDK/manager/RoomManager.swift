@@ -21,6 +21,9 @@ public final class RoomManager: NSObject {
     public var currentRoomInfo: RoomInfo?
     public private(set) var room: Room?
     private var timeoutTimer: Timer?
+    /// 标记首次连接的轨道初始化是否完成，
+    /// 为 true 时 RoomDelegate 的 .connected 回调不直接通知上层（由 connectInternal 统一通知）
+    private var isInitialConnecting: Bool = false
     
     private var connectionStatusListeners: [UUID: (String, ConnectStatus) -> Void] = [:]
     
@@ -124,6 +127,7 @@ public final class RoomManager: NSObject {
         
         let room = Room(delegate: self, roomOptions: roomOptions)
         self.room = room
+        self.isInitialConnecting = true
         
         do {
             TgoLogger.shared.debug("正在连接到服务器...")
@@ -131,8 +135,17 @@ public final class RoomManager: NSObject {
                 autoSubscribe: true
             ))
             TgoLogger.shared.info("成功连接到房间 - roomName: \(roomInfo.roomName)")
-            
-            // Initial track setup
+        } catch {
+            TgoLogger.shared.error("连接到房间失败: \(error.localizedDescription)")
+            self.isInitialConnecting = false
+            notifyConnectionStatusChanged(roomName: roomInfo.roomName, status: .disconnected)
+            self.currentRoomInfo = nil
+            self.room = nil
+            return
+        }
+        
+        // 连接成功后设置轨道，失败不影响房间连接状态
+        do {
             if micEnabled {
                 TgoLogger.shared.debug("初始化麦克风...")
                 try await room.localParticipant.setMicrophone(enabled: true)
@@ -145,15 +158,15 @@ public final class RoomManager: NSObject {
                 TgoLogger.shared.debug("初始化屏幕共享...")
                 try await room.localParticipant.setScreenShare(enabled: true)
             }
-            
-            startTimeoutChecker(timeoutSeconds: roomInfo.timeout)
-            
         } catch {
-            TgoLogger.shared.error("连接到房间失败: \(error.localizedDescription)")
-            notifyConnectionStatusChanged(roomName: roomInfo.roomName, status: .disconnected)
-            self.currentRoomInfo = nil
-            self.room = nil
+            TgoLogger.shared.warning("初始化音视频轨道失败（不影响通话连接）: \(error.localizedDescription)")
         }
+        
+        // 轨道初始化完成，通知上层 connected（此时 isMicrophoneOn/isCameraOn 已是准确值）
+        self.isInitialConnecting = false
+        notifyConnectionStatusChanged(roomName: roomInfo.roomName, status: .connected)
+        
+        startTimeoutChecker(timeoutSeconds: roomInfo.timeout)
     }
     
     public func leaveRoom() async {
@@ -235,15 +248,22 @@ extension RoomManager: RoomDelegate {
     public func room(_ room: Room, didUpdateConnectionState state: ConnectionState, from oldState: ConnectionState) {
         guard let roomName = currentRoomInfo?.roomName else { return }
         
+        TgoLogger.shared.info("房间连接状态变化: \(oldState) -> \(state)")
+        
         switch state {
         case .connecting:
             notifyConnectionStatusChanged(roomName: roomName, status: .connecting)
         case .connected:
-            notifyConnectionStatusChanged(roomName: roomName, status: .connected)
             ParticipantManager.shared.getLocalParticipant()?.setLocalParticipant(room.localParticipant)
-            // 同步已在房间中的远程参与者（触发 isJoined 状态更新）
             ParticipantManager.shared.syncExistingRemoteParticipants()
+            // 首次连接时由 connectInternal 在轨道初始化完成后统一通知 connected，
+            // 确保上层读取到的 isMicrophoneOn/isCameraOn 与传入的设置一致。
+            // 重连场景（reconnecting -> connected）则直接通知。
+            if !isInitialConnecting {
+                notifyConnectionStatusChanged(roomName: roomName, status: .connected)
+            }
         case .disconnected:
+            isInitialConnecting = false
             notifyConnectionStatusChanged(roomName: roomName, status: .disconnected)
             ParticipantManager.shared.getLocalParticipant()?.notifyLeave()
         case .reconnecting:

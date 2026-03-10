@@ -199,8 +199,9 @@ public final class ParticipantManager {
         
         TgoLogger.shared.info("邀请参与者 - roomName: \(roomName), uids: \(uids)")
         
+        let loginUID = roomInfo.loginUID
         let existingUids = Set(remoteParticipants.keys)
-        var newUids = uids.filter { !existingUids.contains($0) }
+        var newUids = uids.filter { $0 != loginUID && !existingUids.contains($0) }
         
         if newUids.isEmpty {
             TgoLogger.shared.debug("邀请的参与者已存在，无需重复添加")
