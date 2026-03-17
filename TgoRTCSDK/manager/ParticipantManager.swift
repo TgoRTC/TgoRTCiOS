@@ -201,12 +201,18 @@ public final class ParticipantManager {
 
         let loginUID = roomInfo.loginUID
 
-        // 清理已超时/已销毁的参与者，允许重新邀请
+        // 清理无效的参与者（已销毁、或已标记加入但实际已断开），允许重新邀请
         for uid in uids {
-            if let existing = remoteParticipants[uid], existing.isDisposed {
-                TgoLogger.shared.debug("清理已超时的参与者 - uid: \(uid)")
-                remoteParticipants.removeValue(forKey: uid)
-                roomInfo.uidList.removeAll { $0 == uid }
+            if let existing = remoteParticipants[uid] {
+                // 已销毁的参与者，或者标记为已加入但实际 remoteParticipant 已为空（僵尸状态）
+                if existing.isDisposed || (existing.isJoined && existing.remoteParticipant == nil) {
+                    TgoLogger.shared.debug("清理无效参与者 - uid: \(uid), isDisposed: \(existing.isDisposed), isJoined: \(existing.isJoined), hasRemote: \(existing.remoteParticipant != nil)")
+                    if !existing.isDisposed {
+                        existing.notifyLeave(reason: .timeout)
+                    }
+                    remoteParticipants.removeValue(forKey: uid)
+                    roomInfo.uidList.removeAll { $0 == uid }
+                }
             }
         }
 
@@ -214,7 +220,11 @@ public final class ParticipantManager {
         var newUids = uids.filter { $0 != loginUID && !existingUids.contains($0) }
         
         if newUids.isEmpty {
-            TgoLogger.shared.debug("邀请的参与者已存在，无需重复添加")
+            let details = uids.compactMap { uid -> String? in
+                guard let p = remoteParticipants[uid] else { return nil }
+                return "\(uid)(isJoined:\(p.isJoined), isDisposed:\(p.isDisposed), hasRemote:\(p.remoteParticipant != nil))"
+            }
+            TgoLogger.shared.debug("邀请的参与者已存在，无需重复添加: \(details.joined(separator: ", "))")
             return
         }
         
