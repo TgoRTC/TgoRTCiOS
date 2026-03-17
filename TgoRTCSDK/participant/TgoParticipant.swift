@@ -47,7 +47,7 @@ public final class TgoParticipant: NSObject, ObservableObject {
     public private(set) var localParticipant: LocalParticipant?
     public private(set) var remoteParticipant: RemoteParticipant?
     
-    private var isDisposed = false
+    public private(set) var isDisposed = false
     private var audioLevelTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     

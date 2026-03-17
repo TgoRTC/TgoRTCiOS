@@ -198,8 +198,18 @@ public final class ParticipantManager {
         }
         
         TgoLogger.shared.info("邀请参与者 - roomName: \(roomName), uids: \(uids)")
-        
+
         let loginUID = roomInfo.loginUID
+
+        // 清理已超时/已销毁的参与者，允许重新邀请
+        for uid in uids {
+            if let existing = remoteParticipants[uid], existing.isDisposed {
+                TgoLogger.shared.debug("清理已超时的参与者 - uid: \(uid)")
+                remoteParticipants.removeValue(forKey: uid)
+                roomInfo.uidList.removeAll { $0 == uid }
+            }
+        }
+
         let existingUids = Set(remoteParticipants.keys)
         var newUids = uids.filter { $0 != loginUID && !existingUids.contains($0) }
         
