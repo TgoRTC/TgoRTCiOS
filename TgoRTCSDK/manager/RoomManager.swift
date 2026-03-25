@@ -232,7 +232,7 @@ public final class RoomManager: NSObject {
         
         // 移除超时的参与者
         if !timeoutUids.isEmpty, let roomName = currentRoomInfo?.roomName {
-            ParticipantManager.shared.missedParticipants(roomName: roomName, uids: timeoutUids)
+            ParticipantManager.shared.removePendingParticipants(roomName: roomName, uids: timeoutUids)
         }
         
         // 如果没有待处理的参与者了，停止计时器

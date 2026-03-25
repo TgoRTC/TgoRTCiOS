@@ -151,7 +151,7 @@ public final class ParticipantManager {
         }
     }
 
-    public func missedParticipants(roomName: String, uids: [String]) {
+    public func removePendingParticipants(roomName: String, uids: [String]) {
         guard !uids.isEmpty else { return }
         
         // 判断是否是当前通话

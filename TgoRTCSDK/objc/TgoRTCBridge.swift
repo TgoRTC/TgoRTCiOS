@@ -65,9 +65,9 @@ public class TgoRTCBridge: NSObject {
         ParticipantManager.shared.inviteParticipant(roomName: roomName, uids: uids)
     }
     
-    /// Mark participants as missed/timeout
-    public func missedParticipants(roomName: String, uids: [String]) {
-        ParticipantManager.shared.missedParticipants(roomName: roomName, uids: uids)
+    /// Remove pending participants
+    public func removePendingParticipants(roomName: String, uids: [String]) {
+        ParticipantManager.shared.removePendingParticipants(roomName: roomName, uids: uids)
     }
     
     // Internal helper to manage bridge instances
