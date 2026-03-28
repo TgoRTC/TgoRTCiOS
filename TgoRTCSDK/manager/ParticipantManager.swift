@@ -172,11 +172,11 @@ public final class ParticipantManager {
             
             // 只移除尚未加入的参与者
             if !tgoParticipant.isJoined {
-                tgoParticipant.notifyLeave(reason: .timeout)
-                remoteParticipants.removeValue(forKey: uid)
+                                remoteParticipants.removeValue(forKey: uid)
                 currentRoomInfo.uidList.removeAll { $0 == uid }
                 removedCount += 1
                 TgoLogger.shared.debug("参与者 \(uid) 已移除（超时未加入）")
+                tgoParticipant.notifyLeave(reason: .timeout)
             } else {
                 TgoLogger.shared.debug("参与者 \(uid) 已加入，跳过移除")
             }
@@ -207,11 +207,12 @@ public final class ParticipantManager {
                 // 已销毁的参与者，或者标记为已加入但实际 remoteParticipant 已为空（僵尸状态）
                 if existing.isDisposed || (existing.isJoined && existing.remoteParticipant == nil) {
                     TgoLogger.shared.debug("清理无效参与者 - uid: \(uid), isDisposed: \(existing.isDisposed), isJoined: \(existing.isJoined), hasRemote: \(existing.remoteParticipant != nil)")
+                   
+                    remoteParticipants.removeValue(forKey: uid)
+                    roomInfo.uidList.removeAll { $0 == uid }
                     if !existing.isDisposed {
                         existing.notifyLeave(reason: .timeout)
                     }
-                    remoteParticipants.removeValue(forKey: uid)
-                    roomInfo.uidList.removeAll { $0 == uid }
                 }
             }
         }
@@ -285,12 +286,11 @@ public final class ParticipantManager {
         }
         
         TgoLogger.shared.info("处理参与者离开 - uid: \(identity)")
-        
+        remoteParticipants.removeValue(forKey: identity)
+        TgoRTC.shared.roomManager.currentRoomInfo?.uidList.removeAll { $0 == identity }
         if let tgoParticipant = remoteParticipants[identity] {
             tgoParticipant.notifyLeave()
         }
-        remoteParticipants.removeValue(forKey: identity)
-        TgoRTC.shared.roomManager.currentRoomInfo?.uidList.removeAll { $0 == identity }
     }
     
     public func clear() {
