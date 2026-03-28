@@ -286,11 +286,10 @@ public final class ParticipantManager {
         }
         
         TgoLogger.shared.info("处理参与者离开 - uid: \(identity)")
+        let tgoParticipant = remoteParticipants[identity]
         remoteParticipants.removeValue(forKey: identity)
         TgoRTC.shared.roomManager.currentRoomInfo?.uidList.removeAll { $0 == identity }
-        if let tgoParticipant = remoteParticipants[identity] {
-            tgoParticipant.notifyLeave()
-        }
+        tgoParticipant?.notifyLeave()
     }
     
     public func clear() {
