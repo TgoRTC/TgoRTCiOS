@@ -18,5 +18,5 @@ Pod::Spec.new do |spec|
   spec.source_files = "TgoRTCSDK/**/*.swift"
   
   # LiveKit 依赖
-  spec.dependency "LiveKit", "~> 2.11"
+  spec.dependency "LiveKitClient", "~> 2.11"
 end
