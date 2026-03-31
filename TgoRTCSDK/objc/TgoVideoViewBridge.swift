@@ -7,7 +7,13 @@
 
 import Foundation
 import UIKit
+#if canImport(LiveKit)
 import LiveKit
+#elseif canImport(LiveKitClient)
+import LiveKitClient
+#else
+#error("LiveKit module not found")
+#endif
 import Combine
 
 /// Layout mode for video rendering (Objective-C compatible)
