@@ -6,7 +6,13 @@
 //
 
 import SwiftUI
+#if canImport(LiveKit)
 import LiveKit
+#elseif canImport(LiveKitClient)
+import LiveKitClient
+#else
+#error("LiveKit module not found")
+#endif
 
 public struct TgoTrackRenderer: View {
     @ObservedObject var participant: TgoParticipant

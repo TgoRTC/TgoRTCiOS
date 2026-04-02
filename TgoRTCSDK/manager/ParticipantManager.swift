@@ -6,7 +6,13 @@
 //
 
 import Foundation
+#if canImport(LiveKit)
 import LiveKit
+#elseif canImport(LiveKitClient)
+import LiveKitClient
+#else
+#error("LiveKit module not found")
+#endif
 
 public final class ParticipantManager {
     public static let shared = ParticipantManager()

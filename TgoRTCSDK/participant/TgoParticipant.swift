@@ -5,7 +5,13 @@
 //  Created by Slun on 2026/1/16.
 //
 import Foundation
+#if canImport(LiveKit)
 import LiveKit
+#elseif canImport(LiveKitClient)
+import LiveKitClient
+#else
+#error("LiveKit module not found")
+#endif
 import Combine
 import AVFoundation
 

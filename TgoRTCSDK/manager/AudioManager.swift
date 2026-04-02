@@ -6,7 +6,13 @@
 //
 
 import Foundation
+#if canImport(LiveKit)
 import LiveKit
+#elseif canImport(LiveKitClient)
+import LiveKitClient
+#else
+#error("LiveKit module not found")
+#endif
 import AVFoundation
 
 // MARK: - 音频输出设备类型
