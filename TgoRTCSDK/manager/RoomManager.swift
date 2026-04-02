@@ -122,7 +122,15 @@ public final class RoomManager: NSObject {
                 simulcast: true
             ),
             adaptiveStream: true,
-            dynacast: true
+            dynacast: true,
+            // iOS 15+ 支持系统 PiP，需要保持本地摄像头在后台继续采集
+            // iOS 14 及以下无 PiP 能力，保持默认行为（后台自动暂停摄像头）
+            suspendLocalVideoTracksInBackground: {
+                if #available(iOS 15.0, *) {
+                    return false
+                }
+                return true
+            }()
         )
         
         let room = Room(delegate: self, roomOptions: roomOptions)
